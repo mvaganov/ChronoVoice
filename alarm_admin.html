@@ -1,0 +1,658 @@
+
+<!DOCTYPE html>
+<!-- administers alarm.html -->
+<html><head><style>
+textarea {
+  font-family:Consolas,Monaco,Lucida Console,Liberation Mono,DejaVu Sans Mono,Bitstream Vera Sans Mono,Courier New, monospace;
+}
+</style><script>
+var rootFile = "dates.txt"
+
+function ById(id) { return document.getElementById(id); }
+
+function isFunction(functionToCheck) {
+	return functionToCheck && {}.toString.call(functionToCheck) === '[object Function]';
+}
+
+var Parse_SPACE = [" ","\t","\n","\r"];
+
+function SetTextArea(textAreaName, text) {
+	var textArea = ById(textAreaName);
+	textArea.value = text;
+	textArea.style.visibility = "visible"
+	ResizeTextArea(textArea);
+}
+
+/** @return {Date} a new Date object, used for getting current time. can be modified for testing */
+function newDate() {
+	var d = new Date();
+	// // ... for testing
+	// var daysIntoTheFuture = {d:0, h:0, m:0};
+	// d.setDate(d.getDate()+daysIntoTheFuture.d);
+	// d.setHours(d.getHours()+daysIntoTheFuture.h);
+	// d.setMinutes(d.getMinutes()+daysIntoTheFuture.m);
+	return d;
+}
+
+/** return the given 'number' padded with leading zeros to be 'size' big*/
+function String_NumberLead0s(number, size) {
+	var s = number+"";
+	while (s.length < size) s = "0" + s;
+	return s;
+}
+
+/**
+@param haystack {string} where to look for needles
+@param needles {string[]} list of strings to look for
+@param startIndex {number} where in the haystack to start looking
+@param out_whichToken {number[]} essentially extra output, where element[0] is the index from needles of the needle that was found in haystack
+@return where in the haystack the needle was found
+*/
+function String_FindTheNextOfThese(haystack, needles, startIndex, out_whichToken) {
+	var startLetters = "";
+	for(var i = 0; i < needles.length; ++i) startLetters += needles[i][0];
+	var index = 0, cursor = 0;
+	for(var i = startIndex; i < haystack.length; ++i) {
+		cursor = 0;
+		do{
+			index = startLetters.indexOf(haystack[i], cursor);
+			if(index >= 0 && index < haystack.length
+			&& haystack.length >= i+needles[index].length
+			&& (needles[index].length == 1
+			|| haystack.indexOf(needles[index], i) == i)){
+				if(out_whichToken != null) out_whichToken[0] = index;
+				return i;
+			}
+			cursor = index+1;
+		}while(index >= 0);
+	}
+	return -1;
+}
+/**
+@param str {string}
+@param delimiters {string[]} list of strings
+@param includeDelimiters {boolean} if true, will append delimiters in the returned list
+@return {string[]} a list of tokens, separated by delimiters, optionally including the delimiters
+*/
+function String_Split(str, delimiters, includeDelimiters = true) {
+	var tokens = [];
+	var start = 0, end = -1;
+	var token = null;
+	var whichDelimiter = -1;
+	while(str && start < str.length) {
+		whichDelimiter = [-1];
+		end = String_FindTheNextOfThese(str, delimiters, start, whichDelimiter);
+		if(end < 0) { end = str.length; }
+		if(end-start > 0) {
+			token = str.substring(start, end);
+			tokens.push(token);
+		}
+		if(end >= 0 && end < str.length){
+			end += delimiters[whichDelimiter[0]].length;
+		}
+		if(includeDelimiters && whichDelimiter[0] >= 0) { tokens.push(delimiters[whichDelimiter]); }
+		start = end;
+	}
+	return tokens;
+}
+
+/**
+@param filename {string} URL of file to get
+@param cb {function(error, responseText{string})} where to pass file data
+*/
+function String_FromFile(filename, cb) {
+	if(!filename.startsWith("http") && !filename.startsWith("file")) {
+		var path = window.location.href.substring(0, window.location.href.lastIndexOf("/")+1)
+		filename = path+filename;
+	}
+	// if(filename.startsWith("file")) {
+	// 	var errorString = "you can't get "+filename+" from your local computer. this is a security feature of JavaScript";
+	// 	console.log(errorString)
+	// 	cb(errorString)
+	// 	return;
+	// }
+	var client = new XMLHttpRequest();
+	client.open('GET', filename);
+	client.onreadystatechange = function() {
+		if(client.readyState == 4) {
+			if (client.status == 200) {
+				cb(null, client.responseText);
+				return;
+			} else {
+				// console.log(client.status+" "+client.readyState);
+				cb(client.status);
+			}
+		}
+	}
+	try {
+		client.send();
+	} catch(e) {
+		console.log(client+" failed. "+e)
+		cb(e);
+		return;
+	}
+}
+
+function DateString(dayM, dayD, dayY) {
+	if(!dayM || !dayD || !dayY) {
+		var date = newDate();
+		if(!dayM) dayM = date.getMonth()+1;
+		if(!dayD) dayD = date.getDate();
+		if(!dayY) dayY = date.getFullYear();
+	}
+	// console.log(dayM,dayD,dayY);	
+	return dayM+"-"+dayM+"-"+dayY;
+}
+
+function AllowTabsInTextArea(e) {
+	if(e.keyCode==9 || e.which==9){
+		e.preventDefault();
+		var s = this.selectionStart;
+		this.value = this.value.substring(0,this.selectionStart) + "	" + this.value.substring(this.selectionEnd);
+		this.selectionEnd = s+1; 
+	}
+}
+function SetupTextArea(a) {
+	a.onkeydown = AllowTabsInTextArea;
+	a.onkeyup = ResizeTextAreaOnEvent;
+}
+
+function ResizeTextArea (a) {
+	a.style.height = 'auto';
+	a.style.height = a.scrollHeight+'px';
+}
+function ResizeTextAreaOnEvent(e) { ResizeTextArea(this); }
+
+function AddScheduleTypeEntry(value) {
+	if(!value) {
+		value="regular day\nThis morning\t0:00\t12:00\nToday\t12:00\t20:00\nThis evening\t20:00\t24:00";
+	}
+	var schTypes = ById("scheduleTypes");
+	var textArea = document.createElement("textarea");
+	textArea.cols = 40;
+	textArea.rows = 1;
+	textArea.value = value;
+	schTypes.appendChild(textArea);
+	SetupTextArea(textArea);
+	ResizeTextArea(textArea);
+}
+
+function UpdateScheduleTypesFromMasterSchedule(scheduleTypesToUse) {
+	var database = ById("database");
+	var days = String_Split(database.value, ["\n"], false);
+	var index = 0;
+	var IterateFiles = null;
+	var filed = {};
+	var alreadyExist = {};
+	var areas = GetTextAreas(true);
+	for(var a=0;a<areas.length;++a) {
+		if(!areas[a].id){
+			var endTitle = areas[a].value.indexOf('\n');
+			if(endTitle < 0) { endTitle = areas[a].value.length; }
+			var title = areas[a].value.substring(0, endTitle);
+			filed[title] = areas[a].value;
+			alreadyExist[title] = areas[a].value;
+		}
+	}
+	if(scheduleTypesToUse) {
+		for(var k in scheduleTypesToUse) {
+			if(!alreadyExist[k]) {
+				var text = k;
+				if(scheduleTypesToUse[k] && scheduleTypesToUse[k].length > 0) {
+					text+="\n"+scheduleTypesToUse[k];
+				}
+				AddScheduleTypeEntry(text);
+				alreadyExist[k] = text;
+			}
+		}
+		return;
+	}
+	function Iterate() {
+		index++;
+		if(index < days.length) {
+			IterateFiles();
+		} else {
+			var keys = Object.keys(filed);
+			keys.sort();
+			for(var a=0; a<keys.length; ++a){
+				if(!alreadyExist[keys[a]]) {
+					AddScheduleTypeEntry(filed[keys[a]]);
+					alreadyExist[keys[a]] = filed[keys[a]];
+				}
+			}
+		}
+	}
+	IterateFiles = function() {
+		var line = String_Split(days[index], ["\t"], false);
+		for(var i=1;i<line.length;++i) {
+			var name = line[i];
+			if(!filed[name]) {
+				var filename = name+".txt";
+				filed[name] = name;
+				// console.log(filename);
+				String_FromFile(filename, function(err, data){
+					if(!err) {
+						// console.log(name+"\n"+data);
+						var text = name;
+						if(data && data.length > 0) {
+							text += "\n"+data;
+						}
+						filed[name] = text;
+					}
+					setTimeout(Iterate,0);
+				});
+			} else {
+				setTimeout(Iterate,0);
+			}
+		}
+	}
+	IterateFiles();
+
+}
+
+function LoadFrom(textAreaName, dataURL) {
+	String_FromFile(dataURL, function(err, filedata){
+		// console.log(filedata);
+		if(filedata) {
+			SetTextArea(textAreaName,filedata);
+			UpdateScheduleTypesFromMasterSchedule();
+		}
+	});
+}
+
+function GetTextAreas(deleteUnused) {
+	var textAreas = [];
+	var textareas = document.getElementsByTagName('textarea');
+	var count = textareas.length;
+	for(var i=0;i<count;i++){
+		var ta = textareas[i];
+		if(ta && ta.type == 'textarea') {
+			if(deleteUnused && ta.value.length == ""
+			// only delete unnamed text areas
+			&& (!ta.id || ta.id.length == 0)) {
+				ta.parentNode.removeChild(ta);
+				--i;
+			} else {
+				textAreas.push(ta);
+			}
+		}
+	}
+	return textAreas;
+}
+
+function LoadRootFile() {
+	var rootFileField = ById("rootFile");
+	// console.log("loading from rootfile: "+rootFileField.value);
+	LoadFrom("database", rootFileField.value);
+}
+
+function ClearAllInputs() {
+	SetTextArea("database","");
+	SetTextArea("utceventstext","");
+	ById("utceventstext").style.visibility = "hidden";
+	var scheduleTypes = ById("scheduleTypes");
+	for(var i = scheduleTypes.childNodes.length-1; i >= 0; --i) {
+		var obj = scheduleTypes.childNodes[i];
+		obj.parentNode.removeChild(obj);
+	}
+}
+
+function LoadEmptyExample() {
+	// console.log("loading example schedule");
+	database.value = DateString()+"	regular day";
+	AddScheduleTypeEntry();
+}
+
+function InitTextAreas() {
+	var rootFileField = ById("rootFile");
+	rootFileField.value = rootFile;
+	var database = ById("database");
+	var storage = window.localStorage;
+	function NoScheduleData(){ return !database.value || database.value.trim().length == 0; }
+	if(NoScheduleData() && storage) {
+		var specText = storage.getItem("spec");
+		if(specText && specText.length > 0) {
+			var spec = JSON.parse(specText);
+			if(spec && spec.database) {
+				// console.log("loaded from localStorage");
+				database.value = spec.database.join("\n");
+				UpdateScheduleTypesFromMasterSchedule(spec.scheduleTypes);
+			}
+		}
+	}
+	if(NoScheduleData()) {
+		LoadRootFile();
+	}
+	if(NoScheduleData()) {
+		LoadEmptyExample();
+	}
+	// allow tabs and resizing for all text areas
+	var textareas = GetTextAreas(true);
+	for(var i=0;i<textareas.length;i++){
+		SetupTextArea(textareas[i]);
+	}
+	RefreshLocalSaves();
+	setTimeout(function(){ResizeTextArea(database);},500);
+}
+addEventListener('DOMContentLoaded', InitTextAreas);
+
+function RefreshLocalSaves() {
+	var storage = window.localStorage;
+	var localsaves = null;
+	if(storage) {
+		var rawTextData = storage.getItem("localsaves");
+		if(rawTextData) {
+			if(rawTextData == "[object Object]") {
+				rawTextData = null;
+				console.log("BAD SAVE!");
+			}
+			localsaves = JSON.parse(rawTextData);
+		}
+		var selectelement = ById("localsaves");
+		for (var i = selectelement.options.length; i >= 0; i--) {
+			selectelement.options[i] = null;
+		}
+		function SelectOption(value, text) {
+			var opt;
+			opt  = document.createElement("option");
+			opt.value = value; opt.textContent = text;
+			return opt;
+		}
+		selectelement.appendChild(SelectOption("*DO Save","Save to Local Storage"));
+		selectelement.appendChild(SelectOption("*DO iCal","Import iCal file"));
+		selectelement.appendChild(SelectOption("*DO LoadEmptyExample","Load Empty Example"));
+		selectelement.appendChild(SelectOption("*DO LoadRootFile","Load Local-to-this-Domain file"));
+		if(localsaves) {
+			for(var k in localsaves) {
+				selectelement.appendChild(SelectOption(k,"Load \""+k+"\""));
+			}
+		}
+	}
+	LocalSavesOptionChange();
+	return localsaves;
+}
+function ShowElement(element, visible) { element.style.display = visible?"block":"none"; }
+function IsElementVisible(element) { return element.style.display != "none"; }
+function ToggleElement(elementid) {
+	var shedulesettings = ById(elementid);
+	var visibility = !IsElementVisible(shedulesettings);
+	ShowElement(shedulesettings, visibility);
+	return visibility;
+}
+function LocalSavesOptionChange() {
+	var select = ById("localsaves");
+	var v = select.value;
+	var t = select.options[select.selectedIndex].innerHTML
+	// console.log(v);
+	ShowElement(ById("interface_load"), t.startsWith("Load "));
+	ShowElement(ById("interface_file"), v == "*DO LoadRootFile");
+	ShowElement(ById("interface_save"), v == "*DO Save");
+	ShowElement(ById("interface_iCal"), v == "*DO iCal");
+}
+function LoadLocal() {
+	var whatToLoad = ById("localsaves");
+	var v = whatToLoad.value;
+	ClearAllInputs();
+	// console.log("LOADING LOCAL "+v);
+	if(v == "*DO LoadEmptyExample") {
+		ClearAllInputs();LoadEmptyExample();
+		return;
+	}
+	if(v == "*DO LoadRootFile") {
+		LoadRootFile();
+		return;
+	}
+	if(v && v != "") {
+		var localsaves = RefreshLocalSaves();
+		SetTextArea("database",localsaves[v].database.join("\n"));
+		// console.log(localsaves[v]);
+		if(localsaves[v].utceventstext){
+			SetTextArea("utceventstext",localsaves[v].utceventstext);
+		}
+		UpdateScheduleTypesFromMasterSchedule(localsaves[v].scheduleTypes);
+		whatToLoad.value = v;
+		LocalSavesOptionChange();
+	}	
+}
+function SaveLocal() {
+	var savelocal = ById("savelocal");
+	if(savelocal.value) {
+		var storage = window.localStorage;
+		if(storage) {
+			GetTextAreas(true); // clear out empty text areas
+			var localsaves = RefreshLocalSaves();
+			if(!localsaves)localsaves = {};
+			localsaves[savelocal.value] = CreateSpec();
+			storage.setItem("localsaves", JSON.stringify(localsaves));
+			RefreshLocalSaves();
+			var whatToLoad = ById("localsaves");
+			whatToLoad.value = savelocal.value;
+		}
+	}
+}
+
+function CreateSpec() {
+	var database = ById("database");
+	var scheduleTypes = ById("scheduleTypes");
+	var spec={};
+	spec.database = String_Split(database.value, ["\n"], false);
+	spec.scheduleTypes = {};
+	for(var i = 0; i < scheduleTypes.childNodes.length; ++i) {
+		var obj = scheduleTypes.childNodes[i];
+		if(obj.type == 'textarea') {
+			var alltext = obj.value;
+			var firstnewline = alltext.indexOf('\n');
+			if(firstnewline < 0) { firstnewline = alltext.length; }
+			var title = alltext.substring(0,firstnewline);
+			var content = alltext.substring(firstnewline+1);
+			spec.scheduleTypes[title] = content;
+		}
+	}
+	var utceventstext = ById("utceventstext");
+	if(utceventstext.value && utceventstext.value.trim().length > 0) {
+		spec.utceventstext = utceventstext.value;
+	}
+	return spec;
+}
+
+function GoToAlarm() {
+	GetTextAreas(true);
+	var loc = document.location.href;
+	var loc = loc.substring(0,loc.lastIndexOf("/"));
+	var spec = CreateSpec();
+	// console.log(spec);
+	var json = JSON.stringify(spec);
+	var b64 = btoa(json);
+	var nextHref = loc+"/alarm.html?spec="+b64;
+	// window.location.href = nextHref;
+	var storage = window.localStorage;
+	if(storage){
+		storage.setItem("spec", json);
+	}
+	var href = ById("thelink");
+	href.href = nextHref;
+	href.innerHTML = "click here";
+	var urlTextArea = ById("fullurltext");
+	urlTextArea.style.visibility = "visible";
+	urlTextArea.value = nextHref;
+	ResizeTextArea(urlTextArea);
+}
+
+function ConvertUTCToDate(tstamp) {
+	var d = newDate();
+	var index = 0;
+	var YYYY = tstamp.substring(index,index+4); index += 4;
+	var MM = tstamp.substring(index,index+2); index += 2;
+	var DD = tstamp.substring(index,index+2); index += 2;
+	var hh = 0, mm = 0, ss = 0;
+	d.setFullYear(YYYY); d.setMonth(MM-1); d.setDate(DD);
+	if(index < tstamp.length){
+		if(tstamp[index] == "T") { index+=1; }
+		hh = Number(tstamp.substring(index,index+2)); index += 2;
+		mm = Number(tstamp.substring(index,index+2)); index += 2;
+		ss = Number(tstamp.substring(index,index+2)); index += 2;
+		if(tstamp[index] == "Z") {
+			d = new Date(Date.UTC(YYYY, MM-1, DD, hh, mm, ss));
+		} else {
+			d.setHours(hh); d.setMinutes(mm); d.setSeconds(ss);
+		}
+	}
+	return d;
+}
+function ConvertDateToString(date) {
+	return date.getFullYear()+
+	String_NumberLead0s(date.getMonth()+1,2)+
+	String_NumberLead0s(date.getDate(),2)+"T"+
+	String_NumberLead0s(date.getHours(),2)+
+	String_NumberLead0s(date.getMinutes(),2)+
+	String_NumberLead0s(date.getSeconds(),2);
+}
+function ConvertDateToUTC(date) {
+	return date.getUTCFullYear()+
+	String_NumberLead0s(date.getUTCMonth()+1,2)+
+	String_NumberLead0s(date.getUTCDate(),2)+"T"+
+	String_NumberLead0s(date.getUTCHours(),2)+
+	String_NumberLead0s(date.getUTCMinutes(),2)+
+	String_NumberLead0s(date.getUTCSeconds(),2)+"Z";
+}
+
+function ReadICS(text) {
+	var vevents = String_Split(text, ["BEGIN:VEVENT","END:VEVENT"],false);
+	// console.log(vevents);
+	var hourOffset = 0, minuteOffset = 0;
+	var rules = {};
+	var realEvents = [];
+	var TZID = "";
+	for(var v = 0; v < vevents.length; ++v) {
+		var entry = vevents[v].trim();
+		var singleEvent = {start:"",end:"",name:""};
+		if(entry && entry.length > 0){
+			var lines = String_Split(entry, ["\n","\r"], false);
+			// if the next line(s) starts with whitespace, add it to the previous line
+			for(var i=0; i < lines.length; ++i){
+				var line = lines[i];
+				while(i+1 < lines.length && lines[i+1].startsWith(" ")) {
+					i++;
+					line += lines[i].trimStart();
+				}
+				// console.log(line);
+				if(line.startsWith("TZID")) {
+					var colon = line.indexOf(":");
+					TZID = line.substring(colon+1);
+				}
+				if(line.startsWith("BEGIN:VTIMEZONE")) {
+					// find the standard
+				}
+				if(line.startsWith("RRULE")) {
+					var colon = line.indexOf(":");
+					singleEvent.rule = line.substring(colon+1);
+				}
+				if(line.startsWith("TZOFFSETFROM")) {
+					var colon = line.indexOf(":");
+					var intval = Number(line.substring(colon+1));
+					var min = ((intval<0)?-intval:intval) % 100;
+					var hr = intval / 100;
+					hourOffset = hr;
+					minuteOffset = ((hr<0)?-min:min);
+				}
+				if(line.startsWith("DTSTART")) {
+					// parse YYYYMMDD\Thhmmss\Z
+					var colon = line.indexOf(":");
+					// console.log("HOUROFFSET "+hourOffset);
+					var date = ConvertUTCToDate(line.substring(colon+1), hourOffset, minuteOffset);
+					singleEvent.start = ConvertDateToUTC(date);	
+				}
+				if(line.startsWith("DTEND")) {
+					// parse YYYYMMDD\THHMMSS\Z
+					var colon = line.indexOf(":");
+					var date = ConvertUTCToDate(line.substring(colon+1), hourOffset, minuteOffset);
+					singleEvent.end = ConvertDateToUTC(date);
+				}
+				if(line.startsWith("SUMMARY")) {
+					var colon = line.indexOf(":");
+					singleEvent.name = line.substring(colon+1);
+				}
+			}
+			if(singleEvent.name != "") {
+				realEvents.push(singleEvent);
+			}
+		}
+	}
+	// console.log(realEvents);
+	return realEvents;
+}
+
+// TODO https://www.html5rocks.com/en/tutorials/file/dndfiles/
+function handleFileSelect(evt) {
+	var files = evt.target.files; // FileList object
+	// files is a FileList of File objects. List some properties.
+	var output = [];
+	function updateProgress(evt) {
+		if (evt.lengthComputable) {
+			var percentLoaded = Math.round((evt.loaded / evt.total) * 100);
+			// console.log(percentLoaded);
+		}
+	}
+	function errorHandler(evt) {
+		switch(evt.target.error.code) {
+		case evt.target.error.NOT_FOUND_ERR: console.log('File Not Found!');
+			break;
+		case evt.target.error.NOT_READABLE_ERR: console.log('File is not readable');
+			break;
+		case evt.target.error.ABORT_ERR: break;
+		default:
+			console.log('An error occurred reading this file.');
+		};
+	}
+	for (var i = 0, f; f = files[i]; i++) {
+		// console.log(f.name+", "+f.size+" b, "+
+		// ((f.lastModifiedDate) ? f.lastModifiedDate.toLocaleDateString() : ''));
+		var blob = f.slice(0, f.size);
+		var reader = new FileReader();
+		reader.onprogress = updateProgress;
+		reader.onerror = errorHandler;
+		reader.onloadend = function(evt){
+			var events = ReadICS(evt.target.result);
+			var txtout = "";
+			for(var e=0;e<events.length;++e){
+				if(e > 0) txtout+="\n";
+				var ev = events[e];
+				txtout += ev.start+"\t"+ev.end+"\t"+ev.name;
+				if(ev.rule) {
+					txtout += "\t"+ev.rule;
+				}
+			}
+			SetTextArea("utceventstext", txtout);
+		}
+		reader.readAsBinaryString(blob);
+	}
+}
+addEventListener('DOMContentLoaded', function(){
+	ById('files').addEventListener('change', handleFileSelect, false);
+});
+
+</script></head><body>
+	<button onclick="this.innerHTML = ToggleElement('schedulesettings')?'Hide Schedule Settings':'Show Schedule Settings'">Hide Schedule Settings</button>
+	<table id="schedulesettings"><style>td{vertical-align: top;}</style>
+		<tr><td>
+		Master Schedule (all days)<br>
+		<textarea cols="40" id="database" onkeyup="ResizeTextArea(this)"></textarea><br>
+	</td><td>
+		Day Schedule Types (each day)<br>
+		<div style="max-width: 280px;" id="scheduleTypes"></div>
+		<button onclick="AddScheduleTypeEntry()">Add New Schedule Type</button>
+		<br><button onclick="UpdateScheduleTypesFromMasterSchedule()">Refresh Schedule Types form Master Schedule</button>
+	</td><td>
+		<div id="loadoptions">
+			<select id="localsaves" onchange="LocalSavesOptionChange();"><option value=""><i>no local saves</i></option></select><button id="interface_load" onclick="LoadLocal();">load data</button>
+			<span id="interface_file"><input id="rootFile"/></span>
+			<span id="interface_save"><input id="savelocal" placeholder="local save name"/><button onclick="SaveLocal();">save data</button></span>
+			<span id="interface_iCal"><input type="file" id="files" multiple /></span>
+			<br><textArea cols="80" id="utceventstext" style="visibility:hidden" onkeyup="ResizeTextArea(this)"></textarea>
+		</div>
+		
+		<br><br><button onclick="GoToAlarm()">Use This Schedule</button>
+		<br><a id="thelink" href=""></a>
+		<br><textarea cols="80" rows="2" id="fullurltext" style="visibility:hidden"> </textarea>
+	</td></tr></table>
+</body></html>

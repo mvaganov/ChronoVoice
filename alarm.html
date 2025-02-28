@@ -1,0 +1,1845 @@
+<!DOCTYPE html>
+<!--
+author: Michael Vaganov (mvaganov@hotmail.com)
+license: Copyfree, Public Domain
+-->
+<html><title>Alarm</title><head>
+<script>
+function ById(id) {
+	return document.getElementById(id);
+}
+function ChangeElementVisibility(e, isVisible = undefined) {
+	if(isVisible === undefined) {
+		isVisible = e.style.display=='inline' || e.style.display=='block' || !e.style.display;
+		isVisible = !isVisible;
+	}
+	if(isVisible == 'inline'){
+		e.style.display = 'inline';
+	} else {
+		e.style.display = isVisible ? 'block' : 'none';
+	}
+}
+/** @return a table of URL encoded parameters */
+function GetUrlVars() {
+	var vars = {};
+	var parts = window.location.href.replace(/[?&]+([^=&]+)=([^&]*)/gi, function(m,key,value) {
+		vars[key] = value;
+	});
+	return vars;
+}
+
+/**
+@param text {string} what to say
+@param voice {string} voice to use to say it
+@param callback {function(Error)} what to call when the voice is finished
+*/
+function Voice_Speak(text, voice, callback) {
+	var mute = ById('mute'); // console.log(mute);
+	if(mute != null && mute.checked) { return; }
+	var u = new SpeechSynthesisUtterance();
+	u.text = text;
+	if((typeof voice) == 'string') { voice = Voice_GetVoiceObject(voice); }
+	if(voice) {
+		console.log(voice.name+": "+text);
+		u.voice = voice;
+	}
+	u.onend   = function ()  { if (callback) { callback(null); } };
+	u.onerror = function (e) { if (callback) { callback(e);    } };
+	speechSynthesis.speak(u);
+}
+
+/**
+@param {string} voicename
+@return {SpeechSynthesisVoice} or null if there is no voice by the given name
+*/
+function Voice_GetVoiceObject(voicename) {
+	if(voicename) {
+		voicename = voicename.toLowerCase();
+		voices = speechSynthesis.getVoices();
+		for(var i = 0; i < voices.length; ++i) {
+			if(voices[i].name.toLowerCase() == voicename.toLowerCase()) {
+				return voices[i];
+			}
+		}
+	}
+	return null;
+}
+(function Voice_Initialize() {
+	// prompt the speechSynthesis object to load some voices
+	if (typeof speechSynthesis !== 'undefined' && speechSynthesis.onvoiceschanged !== undefined) {
+		speechSynthesis.onvoiceschanged = function(){
+			// var outstring = "voices available: ";
+			var select = document.getElementById("voiceselect");
+			for(var i = select.options.length - 1; i >= 0; i--) { select.options[i] = null; }
+			voices = speechSynthesis.getVoices();
+			for(var i = 0; i < voices.length; ++i) {
+				var option = document.createElement("option");
+				option.text = voices[i].name+" ("+voices[i].lang+")";
+				option.value = voices[i].name;
+				select.appendChild(option);
+				// outstring += ((i>0)?", ":"")+option.text;
+			}
+			// console.log(outstring);
+		};
+	}
+})();
+/**
+@param {object} an element with a checkbox sibling (in the DOM)
+@param {number} how many sibling checkboxes to trigger
+*/
+function ToggleSiblingCheckbox(element, count = 1) {
+	var parent = element.parentElement;
+	var nodes = parent.childNodes;
+	for(var i = 0; i < nodes.length; i++) {
+		if(nodes[i].type == 'checkbox' && (count > 0 || count < 0)) {
+			nodes[i].click();
+			count = count-1;
+			if(count == 0) break;
+		}
+	}
+}
+
+/** assign a variable into the cookie */
+function setCookie(cname, cvalue, exdays=10000000) {
+	var d = new Date();
+	d.setTime(d.getTime() + (exdays*24*60*60*1000));
+	var expires = "expires="+ d.toUTCString();
+	cvalue = encodeURIComponent(cvalue);
+	document.cookie = cname + "=" + cvalue + ";" + expires + ";path=/";
+}
+/** @return cookie data from a variable in the cookie */
+function getCookie(cname) {
+	var name = cname + "=";
+	var decodedCookie = decodeURIComponent(document.cookie);
+	var ca = decodedCookie.split(';');
+	var result = "";
+	for(var i = 0; i <ca.length; i++) {
+		var c = ca[i];
+		while (c.charAt(0) == ' ') { c = c.substring(1); }
+		if (c.indexOf(name) == 0) {
+			result = c.substring(name.length, c.length);
+			break;
+		}
+	}
+	return result;
+}
+
+var timeOffset = {d:0, h:0, m:0, s:0};
+function reloadDateOffset() {
+	var sv = getCookie("timeoffset.s");
+	var mv = getCookie("timeoffset.m");
+	var hv = getCookie("timeoffset.h");
+	var dv = getCookie("timeoffset.d");
+	if(sv) ById("timeoffset.s").value = sv;
+	if(mv) ById("timeoffset.m").value = mv;
+	if(hv) ById("timeoffset.h").value = hv;
+	if(dv) ById("timeoffset.d").value = dv;
+	setDateOffset(false);
+}
+function setDateOffset(alsoRestartAlarms = true){
+	var s = ById("timeoffset.s");
+	var m = ById("timeoffset.m");
+	var h = ById("timeoffset.h");
+	var d = ById("timeoffset.d");
+	setCookie("timeoffset.s", s.value);
+	setCookie("timeoffset.m", m.value);
+	setCookie("timeoffset.h", h.value);
+	setCookie("timeoffset.d", d.value);
+	if(s.value) timeOffset.s = Number(s.value);
+	if(m.value) timeOffset.m = Number(m.value);
+	if(h.value) timeOffset.h = Number(h.value);
+	if(d.value) timeOffset.d = Number(d.value);
+	if(alsoRestartAlarms) RestartAlarms();
+}
+function AddDate(date, timeOffset) {
+	var d = new Date(date);
+	if(timeOffset.d) { d.setDate(d.getDate()+timeOffset.d); }
+	if(timeOffset.h) { d.setHours(d.getHours()+timeOffset.h); }
+	if(timeOffset.m) { d.setMinutes(d.getMinutes()+timeOffset.m); }
+	if(timeOffset.s) { d.setSeconds(d.getSeconds()+timeOffset.s); }
+	return d;
+}
+/** @return {Date} a new Date object, used for getting current time. can be modified for testing */
+function newDate() {
+	var d = new Date();
+	return AddDate(d, timeOffset);
+}
+
+/**
+@param date {Date} if null, uses newDate(), which is basically 'Date.now()'
+@return {number} amount of seconds
+*/
+function Seconds(date) {
+	if(!date) { date = newDate(); }
+	return date.getTime()/1000;
+}
+
+/**
+@param filename {string} URL of file to get
+@param cb {function(Error, string)} where to pass file data
+*/
+function String_FromFile(filename, cb) {
+	if(!filename.startsWith("http") && !filename.startsWith("file")) {
+		var path = window.location.href.substring(0, window.location.href.lastIndexOf("/")+1)
+		filename = path+filename;
+	}
+	// if(filename.startsWith("file")) {
+	// 	var errorString = "you can't get "+filename+" from your local computer. this is a security feature of JavaScript";
+	// 	console.log(errorString)
+	// 	cb(errorString)
+	// 	return;
+	// }
+	var client = new XMLHttpRequest();
+	client.open('GET', filename);
+	client.onreadystatechange = function() {
+		if(client.readyState == 4) {
+			if (client.status == 200) {
+				cb(null, client.responseText);
+				return;
+			} else {
+				// console.log(client.status+" "+client.readyState);
+				cb(client.status);
+			}
+		}
+	}
+	try{ client.send(); } catch(e) {
+		console.log(client+" failed. "+e)
+		cb(e);
+		return;
+	}
+}
+
+/**
+@param haystack {string} where to look for needles
+@param needles {string[]} list of strings to look for
+@param startIndex {number} where in the haystack to start looking
+@param out_whichToken {number[]} essentially extra output, where element[0] is the index from needles of the needle that was found in haystack
+@return where in the haystack the needle was found
+*/
+function String_FindTheNextOfThese(haystack, needles, startIndex, out_whichToken) {
+	var startLetters = "";
+	for(var i = 0; i < needles.length; ++i) startLetters += needles[i][0];
+	var index = 0, cursor = 0;
+	for(var i = startIndex; i < haystack.length; ++i) {
+		cursor = 0;
+		do {
+			index = startLetters.indexOf(haystack[i], cursor);
+			if(index >= 0 && index < haystack.length
+			&& haystack.length >= i+needles[index].length
+			&& (needles[index].length == 1
+			|| haystack.indexOf(needles[index], i) == i)){
+				if(out_whichToken != null) out_whichToken[0] = index;
+				return i;
+			}
+			cursor = index+1;
+		}while(index >= 0);
+	}
+	return -1;
+}
+/**
+@param str {string}
+@param delimiters {string[]} list of strings
+@param includeDelimiters {boolean} if true, will append delimiters in the returned list
+@return {string[]} a list of tokens, separated by delimiters, optionally including the delimiters
+*/
+function String_Split(str, delimiters, includeDelimiters = true) {
+	var tokens = [];
+	var start = 0, end = -1;
+	var token = null;
+	var whichDelimiter = -1;
+	while(str && start < str.length) {
+		whichDelimiter = [-1];
+		end = String_FindTheNextOfThese(str, delimiters, start, whichDelimiter);
+		if(end < 0) { end = str.length; }
+		if(end-start > 0) {
+			token = str.substring(start, end);
+			tokens.push(token);
+		}
+		if(end >= 0 && end < str.length){
+			end += delimiters[whichDelimiter[0]].length;
+		}
+		if(includeDelimiters && whichDelimiter[0] >= 0) { tokens.push(delimiters[whichDelimiter]); }
+		start = end;
+	}
+	return tokens;
+}
+
+/**
+@param str {string}
+@param delimiters {string[]}
+@return {string[]} a list of tokens, NOT including the delimiters
+*/
+function String_SplitClean(str, delimiters) { return String_Split(str, delimiters, false); }
+
+/**
+@param text {string}
+@param findSubstrings {string[]}
+@param replaceSubstrings {string[]}
+@return {string} text after replacing elements from find with elements from replace
+*/
+function String_Replace(text, findSubstrings, replaceSubstrings) {
+	if(!text)return text;
+	var whichIgnorable = [-1];
+	var cursor = 0, lastValidIndex = 0;
+	var replaced = "";
+	while(cursor >= 0) {
+		var started = cursor;
+		whichIgnorable[0] = -1;
+		cursor = String_FindTheNextOfThese(text, findSubstrings, started, whichIgnorable);
+		if(cursor >= 0) {
+			if(lastValidIndex != cursor) {
+				replaced += text.substring(lastValidIndex, cursor);
+			}
+			cursor += findSubstrings[whichIgnorable[0]].length;
+			if(replaceSubstrings && replaceSubstrings.length > 0) {
+				var replaceIndex = whichIgnorable[0];
+				if(replaceIndex >= replaceSubstrings.length)
+					replaceIndex %= replaceSubstrings.length;
+				replaced += replaceSubstrings[replaceIndex];
+			}
+			lastValidIndex = cursor;
+		} else {
+			if(lastValidIndex == 0) { replaced = text; }
+			else { replaced += text.substring(lastValidIndex, text.length); }
+		}
+	}
+	return replaced;
+}
+
+/**
+@param text {string}
+@param substringsToRemove {string[]}
+@return {string} a copy of 'text' after instances of the strings in 'substringsToRemove' were removed
+*/
+function String_Clean(text, substringsToRemove) { return String_Replace(text, substringsToRemove, []); }
+
+/** return the given 'number' padded with leading zeros to be 'size' big*/
+function String_NumberLead0s(number, size) {
+	var s = number+"";
+	while (s.length < size) s = "0" + s;
+	return s;
+}
+/** @return if the given string starts with the given prefix */
+function String_StartsWith (string, prefix) { return string.slice(0, prefix.length) == prefix; }
+
+var Parse_TAB = ["\t"];
+var Parse_QUOTES = ["\'","\""];
+var Parse_SPACE = [" ","\t","\n","\r"];
+var Parse_COLON = [":"];
+var Parse_NEWLINECHARS = ["\n","\r"];
+var Parse_TOKEN_BREAKING_CHARS = [" ",":",";","{","}","(",")","[","]",",","!","<",">"];
+
+/** @class cursor that parses text. 
+most of the Parse_ code could be refactored into this class, but in the interest of keeping this code more-portable, by being less-object-oriented, it hasn't been ObjectOrientified
+*/
+function Parse_Cursor(index=undefined, col=undefined, row=undefined) {
+	if(!index){index=0;}if(!col){col=0;}if(!row){row=0;}
+	this.index = index;
+	this.row = row;
+	this.col = col;
+}
+Parse_Cursor.prototype.toString = function() { return "@"+this.index+", "+this.row+":"+this.col; }
+
+function __Parse_AdvanceCoordinateBy(letter, cursor) {
+	cursor.col++; if(letter == '\n') { cursor.col = 0; cursor.row++; }
+}
+/**
+@param text {string}
+@param cursor {number[]} a number passed by reference in an array of size 1
+*/
+function Parse_SkipWhitepsace(text, cursor) {
+	while(Parse_SPACE.indexOf(text[cursor.index]) >= 0 && cursor.index < text.length) {
+		__Parse_AdvanceCoordinateBy(text[cursor.index], cursor);
+		cursor.index++;
+	}
+}
+/**
+@param text {string}
+@param cursor {number[]} a number passed by reference in an array of size 1
+*/
+function Parse_GetNextToken(text, cursor) {
+	Parse_SkipWhitepsace(text, cursor);
+	var token = null;
+	var quoteType = Parse_QUOTES.indexOf(text[cursor.index]);
+	__Parse_AdvanceCoordinateBy(text[cursor.index], cursor);
+	if(quoteType >= 0) {
+		var i = cursor.index+1;
+		token = ""+Parse_QUOTES[quoteType];
+		while(text[i] != Parse_QUOTES[quoteType]) {
+			__Parse_AdvanceCoordinateBy(text[i], cursor);
+			if(text[i] == '\\') {
+				i++;
+				c = text[i];
+				var escapes = { 'a':'\a', 'b':'\b', 't':'\t', 'n':'\n', 'r':'\r' };
+				if(escapes[c]) { c = escapes[c]; } else {
+					c = "\""+c;
+				}
+				if(i == text.length) { --i; break; }
+				__Parse_AdvanceCoordinateBy(text[i], cursor);
+				token += c;
+			} else {
+				token += text[i];
+			}
+			i++;
+		}
+		token += text[i];
+		i++; // step over that last quote
+		// var oldtoken = token; token = text.substring(cursor.index, i); console.log(token+" "+oldtoken);
+		cursor.index = i;
+	} else {
+		var i = cursor.index+1;
+		if(Parse_TOKEN_BREAKING_CHARS.indexOf(text[cursor.index]) < 0) {
+			while(Parse_TOKEN_BREAKING_CHARS.indexOf(text[i]) < 0
+			&& i < text.length) {
+				__Parse_AdvanceCoordinateBy(text[i], cursor);
+				i++;
+			}
+		}
+		token = text.substring(cursor.index, i);
+		cursor.index = i;
+	}
+	return token;
+}
+
+/**
+@param v {string}
+@param stripQuotesOnly if true, will only remove quotes from beginning and end of token (if they exist)
+@return a more JavaScript-y representation of the given value.
+*/ 
+function Parse_Value(v, stripQuotesOnly) {
+	if(!stripQuotesOnly) {
+		if(v == "null") { return null; }
+		else if(!isNaN(v)) { return Number(v); }
+	}
+	var whichQuote = Parse_QUOTES.indexOf(v[0]);
+	if(whichQuote >= 0 && whichQuote == Parse_QUOTES.indexOf(v[v.length-1])) {
+		v = v.substring(1, v.length-1);
+	}
+	return v;
+}
+function Parse_ERROR(errcb, errorText){
+	if(errcb) { errcb(errorText); return; }
+	throw errorText;
+}
+/**
+@param text {string}
+@param obj {object}
+@param cursor {number[]}
+@return {object} the JavaScript object version of the text, which should be a stringified JavaScript Object
+*/
+function Parse_IntoObject(text, cursor, obj, errcb=undefined) {
+	if(!obj) { obj = {}; }
+	if(!cursor) {
+		cursor = {index:0,row:0,col:0};
+	}
+	while(cursor.index < text.length) {
+		var name = Parse_Value(Parse_GetNextToken(text, cursor), true);
+		if(name == /*{*/"}") { break; }
+		if(Parse_TOKEN_BREAKING_CHARS.indexOf(name) >= 0) {
+			return Parse_ERROR(errcb, cursor+" name of field ("+name+")cannot be one of these: "+Parse_TOKEN_BREAKING_CHARS);
+		}
+		var value = Parse_GetNextToken(text, cursor);
+		if(value != ":") { return Parse_ERROR(errcb, cursor+" Expected colon "+cursor); }
+		value = Parse_Value(Parse_GetNextToken(text, cursor));
+		if(value == /*{*/"}") { return Parse_ERROR(errcb, cursor+ " Expected value, not end of object"); }
+		if(value == "["/*]*/) {
+			value = obj[name];
+			if(!value) value = [];
+			value = Parse_IntoList(text, cursor, value, errcb);
+		} else if (value == "{"/*"}"*/) {
+			value = obj[name];
+			if(!value) value = {};
+			value = Parse_IntoObject(text, cursor, value, errcb);
+		}
+		obj[name] = value;
+		var comma = Parse_GetNextToken(text, cursor);
+		if(comma == /*{*/"}") { break; }
+		else if(comma != ",") { return Parse_ERROR(errcb, cursor+" Found "+comma+". Expected comma or ending-curly-brace after \'"+name+"\':"+value); }
+	}
+	return obj;
+}
+/**
+@param text {string}
+@param obj {object}
+@param cursor {number[]}
+*/
+function Parse_IntoList(text, cursor, list, errcb=undefined) {
+	if(!list) { list = []; }
+	if(!cursor) { cursor = [0,{row:0,col:0}]; }
+	while(cursor.index < text.length) {
+		value = Parse_Value(Parse_GetNextToken(text, cursor));
+		if(value ==/*"["*/"]") { break; }
+		if(value == /*{*/"}") { return Parse_ERROR(errcb, cursor+" Expected value, not end of object"); }
+		if(value == "["/*]*/) {
+			value = []; value = Parse_IntoList(text, cursor, value, errcb);
+		} else if (value == "{"/*"}"*/) {
+			value = {}; value = Parse_IntoObject(text, cursor, value, errcb);
+		}
+		list.push(value);
+		var comma = Parse_GetNextToken(text, cursor);
+		if(comma == /*[*/"]") { break; }
+		else if(comma != ",") { return Parse_ERROR(errcb, cursor+" Expected comma or ending-curly-brace"); }
+	}
+	return list;
+}
+
+var Alarm_STANDARD_FILE_NAME = "alarm_settings.ini";
+var Alarm_STANDARD_FILE = JSON.stringify({
+	homeURL: "", // TODO remove this?
+	rootFile:"dates.txt",
+	spec:{
+		// order of the alarms here determines priority when milestone speech go off
+		alarms:[{
+			label:"<10m", beginOrEnd:"end", time:10, 
+			message:"You should know that $(name) ends in 10 minutes",randomVoice: true,
+			voiceChoice: ["Samantha", "Daniel", "Alex", "Veena", "Karen", "Tessa"],
+		},{
+			label:"<5m", beginOrEnd:"end", time:5,
+			message:"Oh! $(name) ends in 5 minutes",randomVoice: true,
+			voiceChoice: ["Daniel", "Alex", "Veena", "Karen", "Tessa", "Samantha"]
+		},{
+			label:"<1m", beginOrEnd:"end", time:1,
+			message:"Hey! $(name) is almost over!",randomVoice: true,
+			voiceChoice: ["Alex", "Veena", "Karen", "Tessa", "Samantha", "Daniel"],
+		},{
+			label:"done", beginOrEnd:"end", time:0,
+			message:"$(name) is over.",randomVoice: true,
+			voiceChoice: ["Veena", "Karen", "Tessa", "Samantha", "Daniel", "Alex"],
+		},{
+			label:"begin", beginOrEnd:"beg", time:0,
+			message:"$(name) begins now.",randomVoice: true,
+			voiceChoice: ["Karen", "Tessa", "Samantha", "Daniel", "Alex", "Veena"],
+		}], periodNameTranslation:{
+		A:"A. period",B:"B period", C:"C period", D:"D period", E:"E period",
+		F:"F period", G:"G period", W:"W period", X:"X period", Y:"Y period",
+		Z:"Z period", OH:"office hours", SL:"the assembly",
+		ACT:"spirit week assembly", Mtg:"meeting time", END:"end",
+		}
+	}
+}, null, 2);
+
+/** name of settings text area */
+var __settingsObjectID = "alarmsettings";
+function GetSavableSettings() {
+	return JSON.stringify(__Alarm.spec, null, 2);
+}
+function AdvancedSettingsRefresh() {
+	ById(__settingsObjectID).value = GetSavableSettings();
+}
+// TODO! seperate settings for [[alarms], [periodNameTranslation], [database, scheduleTypes]]
+function SaveAlarmSettingsToPage() {
+	var storage = window.localStorage; // window.sessionStorage; //
+	var specTextArea = ById(__settingsObjectID);
+	var alarmSpec = specTextArea.value;//GetSavableSettings();
+	var testObj = {};
+	var everythingIsOk = true;
+	Parse_IntoObject(alarmSpec, new Parse_Cursor(1,1,0), testObj, function(error) {
+		if(everythingIsOk) { // for the first discovered error
+			console.log(error);
+			if(error.startsWith("@")) {
+				var indexEnd = error.indexOf(",",1);
+				var index = Number(error.substring(1,indexEnd));
+				specTextArea.focus(); // set the cursor to the error location
+				specTextArea.selectionStart = index;
+				specTextArea.selectionEnd = index;
+			}
+		}
+		everythingIsOk = false;
+	});
+	if(everythingIsOk){
+		storage.setItem("spec", alarmSpec);
+		return true;
+	}
+	return false;
+}
+
+/**
+@param datetime {Date}
+@return {string} the given date converted to a string in "H:MM" format
+*/
+function Date_HHMM(datetime) { return datetime.getHours()+":"+String_NumberLead0s(datetime.getMinutes(),2); }
+
+/** the alarm object */
+var __Alarm = null;
+var __Persist = {whenNextMessageWillBe:0}; // TODO make this a bit more elegant, instead of a weird global variable. Maybe just call it "GLOBALS", and dump all the globals in there?
+function TimePrint(seconds) {
+	var out = "";
+	var d = parseInt(seconds/86400);
+	if(d > 0) { out += d+" day"; if(d>1){out+="s"} out+=" ";}
+	seconds -= d*86400;
+	var h = parseInt(seconds/3600);
+	if(h > 0) { out += h+" hr"; if(h>1){out+="s"} out+=" ";}
+	seconds -= h*3600;
+	var m = parseInt(seconds/60);
+	if(m > 0) { out += m+" min"; if(m>1){out+="s"} out+=" ";}
+	seconds -= m*60;
+	var s = parseInt(seconds);
+	if(s > 0) { out += s+" sec"; if(s>1){out+="s"} out+=" ";}
+	return out;
+}
+
+/** @class components of a school schedule */
+function Block(name = "", startTime="12:00", endTime=null, baseDate=null) {
+	if(endTime == null) { endTime = startTime; }
+	this.name = "";
+	this.alarmsUsed = [];
+	this.Set(name, startTime, endTime, baseDate);
+}
+Block.prototype.toString = function() {
+	return name+": " + this.start+" to "+this.end+
+		((this.alarmsUsed && this.alarmsUsed.length()>0)?" "+this.alarmsUsed:"");
+}
+/**
+@param name {string}
+@param startTime {string}
+@param endTime {string}
+*/
+Block.prototype.Set = function(name, startTime, endTime, baseDate=null) {
+	if(name) { this.name = name.trim(); }
+	if(!baseDate){baseDate=newDate();}
+	t = new Date(baseDate);
+	function breakTimeText(txt) {
+		var out = null;
+		if(txt.indexOf(":") >= 0) {
+			out = String_SplitClean(txt, Parse_COLON);
+		} else if(txt.length >= 3) {
+			var l = txt.length;
+			out = [txt.substring(0,l-2),txt.substring(l-2, l)];
+		} else { out = [txt,"00"]; }
+		return out;
+	}
+	if(startTime instanceof Date) {
+		this.start = startTime;
+	} else {
+		var start = breakTimeText(startTime);
+		var startCal = new Date(baseDate);
+		if(startTime) {
+			startCal = new Date(t.getFullYear(), t.getMonth(), t.getDate(), parseInt(start[0]), parseInt(start[1]), 0, 0);
+		}
+		this.start = startCal;
+	}
+	if(endTime instanceof Date) {
+		this.end = endTime;
+	} else {
+		var end   = breakTimeText(endTime);
+		var endCal = new Date(baseDate);
+		if(endTime) {
+			endCal = new Date(t.getFullYear(), t.getMonth(), t.getDate(), parseInt(end[0]), parseInt(end[1]), 0, 0);
+		}
+		this.end = endCal;
+	}
+}
+
+Block.prototype.getDurationMinutes = function() { return parseInt((Seconds(this.end) - Seconds(this.start))/60); }
+
+/** @class
+single points of time, which when triggered, result in the computer speaking some text
+*/
+function Milestone (text = "", when = null, priority = 0, voicesList = null, randomVoice = false) {
+	this.text = text;
+	this.voice = null;
+	this.triggered = 0;
+	this.priority = priority;
+	if(!when) this.moment = newDate();
+	else this.moment = when;
+	function shuffleArray(array) {
+		for (var i = array.length - 1; i > 0; i--) {
+			var j = Math.floor(Math.random() * (i + 1));
+			var temp = array[i]; array[i] = array[j]; array[j] = temp;
+		}
+		return array;
+	}
+	/**
+	@param voicelist {string[]} names
+	@return {SpeechSynthesisVoice} first valid voice from the given list
+	*/
+	function GetTheVoiceThatWorksFrom(voicesList) {
+		for(var i = 0; i < voicesList.length; ++i) {
+			voicesList[i] = voicesList[i].trim();
+			var actualVoice = Voice_GetVoiceObject(voicesList[i]);
+			if(actualVoice != null) { return actualVoice; }
+		}
+		return null;
+	}
+	if(voicesList) {
+		if(randomVoice) { voicesList = shuffleArray(voicesList.slice(0)); }
+		this.voice = GetTheVoiceThatWorksFrom(voicesList);
+	}
+}
+Milestone.prototype.toString = function() {
+	return (this.voice!=null?this.voice.name+":":"")+this.text+"@"+Date_HHMM(this.moment); }
+
+/** @return a new milestone marker */
+var Milestone_minutesBeforeEnd = function(block, text, minutes, priority, voiceList, randomVoice = false) {
+	var m = new Milestone(text, new Date(block.end), priority, voiceList, randomVoice);
+	m.addMinutes(-minutes);
+	return m;
+}
+/**
+@param block {Block}
+@param text {string}
+@param minutes {Number}
+@param priority {Number}
+@param voiceList {string[]}
+@return {Milestone} a new milestone marker
+*/
+var Milestone_minutesAfterBegin = function(block, text, minutes, priority, voiceList, randomVoice = false) {
+	var m = new Milestone(text, new Date(block.start), priority, voiceList, randomVoice);
+	m.addMinutes(minutes);
+	return m;
+}
+Milestone.prototype.addMinutes = function(minutes) {
+	this.moment.setMinutes(this.moment.getMinutes()+minutes);
+}
+Milestone.prototype.isNow = function(lagTimeSeconds = 60) {
+	var diff = Seconds() - Seconds(this.moment);
+	return diff > 0 && diff < lagTimeSeconds;
+}
+Milestone.prototype.isTriggered = function() { return this.triggered != 0; }
+Milestone.prototype.trigger = function() {
+	this.triggered++;
+	Voice_Speak(this.text, this.voice);
+}
+var Milestone_minutesBetween = function(now, soon) {
+	return ((Seconds(soon.moment) - Seconds(now.moment))/60);
+}
+function ConvertDateToUTCString(date, includeHrMinSec = false) {
+	return date.getFullYear()
+	+"-"+String_NumberLead0s(date.getMonth()+1, 2)
+	+"-"+String_NumberLead0s(date.getDate(),2)
+	+(includeHrMinSec?("T"
+	+String_NumberLead0s(date.getHours(),2)
+	+String_NumberLead0s(date.getMinutes(),2)
+	+String_NumberLead0s(date.getSeconds(),2)
+	):"");
+}
+function ConvertUTCToDate(tstamp, useLocalTime = false) {
+	var d = newDate();
+	var index = 0, cursor = 0;
+	cursor = tstamp.indexOf("-", index);
+	var YYYY = tstamp.substring(index,cursor); index = cursor+1;
+	cursor = tstamp.indexOf("-", index);
+	var MM = tstamp.substring(index,cursor); index = cursor+1;
+	cursor = tstamp.indexOf("T", index);
+	if(cursor < 0) { cursor = tstamp.length; }
+	var DD = Number(tstamp.substring(index,cursor)); index = cursor+1;
+	var hh = 0, mm = 0, ss = 0;
+	if(useLocalTime) {
+		d = new Date(YYYY, MM-1, DD);
+	} else {
+		d = new Date(Date.UTC(YYYY, MM-1, DD));
+	}
+	if(index < tstamp.length){
+		hh = Number(tstamp.substring(index,index+2)); index += 2;
+		mm = Number(tstamp.substring(index,index+2)); index += 2;
+		ss = Number(tstamp.substring(index,index+2)); index += 2;
+		d = new Date(Date.UTC(YYYY, MM-1, DD, hh, mm, ss));
+	}
+	return d;
+}
+/**
+@param dateA {Date}
+@param dateB {Date}
+*/
+function IsSameDay(dateA, dateB) {
+	return dateA.getFullYear() == dateB.getFullYear()
+		&& dateA.getMonth() == dateB.getMonth()
+		&& dateA.getDate() == dateB.getDate();
+}
+
+/** @class
+Represents the Alarm system.
+@param currentPath {string?}
+*/
+function Alarm(currentPath = null) {
+	/** schedule-specifics */
+	this.spec = {};
+	/** @type {{time:number,message:string,beginOrEnd:string,label:string}[]} */
+	this.spec.alarms = [];
+	/** @type {{"period code": string}} */
+	this.spec.periodNameTranslation = {};
+	/** @type {{name:{string}, alarmsUsed:{string[]}, start:{Date}, end:{Date}}[]} */
+	this.blocks = [];
+	/** @type {{text:string, moment:Date}[]} */
+	this.milestones = [];
+	/** @type {!string} */
+	this.homeURL = "";
+	/** @type {!string} */
+	this.rootFile = "";
+	/** @type {!string} */
+	this.currentPath = "";
+	/** @type {number} */
+	this.whenTodayEnds;
+	/** @type {boolean} */
+	this.running = false;
+
+	if(!currentPath) {
+		var d=window.location.href;
+		currentPath=d.substring(0, d.lastIndexOf("/")+1);
+	}
+	// @type {string!}
+	this.currentPath = currentPath;
+}
+/**
+@param table {string[][]}
+@param addAlarms {boolean}
+*/
+Alarm.prototype.ParseScheduleTableIntoBlocks = function(table, addAlarms=true, date=null) {
+	var blocks = [];
+	var lateOffset = ById("lateOffset").value;
+	console.log("adding "+lateOffset+" minutes");
+
+	for(var row = 0;row < table.length; ++row) {
+		var b = new Block(table[row][0], table[row][1], table[row][2], date);
+		if(lateOffset) {
+			lateOffset = parseInt(lateOffset);
+			b.start.setMinutes(b.start.getMinutes()+lateOffset);
+			b.end  .setMinutes(b.end  .getMinutes()+lateOffset);
+		}
+		if(addAlarms) {
+			for(var j=0;j<this.spec.alarms.length;++j) {
+				if(b.getDurationMinutes() >= parseInt(this.spec.alarms[j].time)*2.0) {
+					b.alarmsUsed.push(this.spec.alarms[j].label);
+				}
+			}
+		}
+		blocks.push(b);
+	}
+	return blocks;
+}
+/**
+@param events {string}
+@return {Block[]}
+*/
+Alarm.prototype.ParseUTCEventListIntoBlocks = function(events, startDate, endDate = undefined) {
+	var blocks = [];
+	if(!startDate) { startDate = newDate(); }
+	// calculate the start and end of today
+	var dayStart = new Date(startDate.getTime()), dayEnd = null;
+	if(!endDate){
+		dayStart.setHours(0); dayStart.setMinutes(0); dayStart.setSeconds(0);
+		dayEnd = new Date(dayStart.getTime()); dayEnd.setDate(dayStart.getDate()+1);
+	} else {
+		dayEnd = new Date(endDate.getTime());
+	}
+	console.log("blocks for "+dayStart+" to "+dayEnd);
+	for(var i=0;i<events.length;++i) {
+		var event = events[i];
+		console.log(event);
+		// if this event happens today
+		var evStart = ConvertUTCToDate(event[0]);
+		var evEnd = ConvertUTCToDate(event[1]);
+		// if this event has a rule, set the start and end to the most favorable according to the rule...
+		if(event[3]) {
+			var ruleParams = String_Split(event[3], [";"], false);
+			// check to see if it is allowed according to a date limit
+			var allowed = true;
+			var untilval = ruleParams.filter(function(word,index){ return word.startsWith("UNTIL="); });
+			if(untilval && untilval.length > 0) {
+				var until_tstamp = untilval[0].substring(untilval[0].indexOf("=")+1);
+				var limit = ConvertUTCToDate(until_tstamp);
+				allowed = dayStart <= limit;
+			}
+			// if FREQ=WEEKLY, check to see if this is the correct day of the week
+			if(allowed && ruleParams.indexOf("FREQ=WEEKLY") >= 0) {
+				console.log("weekly "+event[2]);
+				// which day
+				var dayval = ruleParams.filter(function(word,index){ return word.startsWith("BYDAY="); });
+				if(dayval && dayval.length > 0) {
+					var days = dayval[0].substring(dayval[0].indexOf("=")+1).split(",");
+					var possiblebyday = ["SU","MO","TU","WE","TH","FR","SA"];
+					var todaycode = possiblebyday[dayStart.getDay()];
+					console.log(todaycode);
+					if (days.indexOf(todaycode) >= 0) {
+						var tdelta = evEnd.getTime() - evStart.getTime();
+						evStart.setFullYear(dayStart.getFullYear());
+						evStart.setMonth(dayStart.getMonth());
+						evStart.setDate(dayStart.getDate());
+						evEnd = new Date(evStart.getTime() + tdelta);
+						console.log("BLOCK "+evStart+" -> "+evEnd);
+					}
+				}
+			}
+		}
+		console.log(evEnd >= dayStart, evEnd <= dayEnd, evStart >= dayStart, evStart <= dayEnd);
+		console.log(evEnd+">="+dayStart,evStart+">="+dayStart);
+		if((evEnd >= dayStart && evEnd <= dayEnd)
+		|| (evStart >= dayStart && evStart <= dayEnd)) {
+			// add this event as a block
+			var b = new Block(event[2], evStart, evEnd);
+			blocks.push(b);
+		}
+	}
+	return blocks;
+}
+/** @return {string} the current schedule, in simple text form */
+Alarm.prototype.blocksToString = function() {
+	var result = "";
+	for(var i = 0; i < blocks.length; ++i) { result += blocks[i].toString() + "\n"; }
+	return result;
+}
+/** sets up a warning schedule based on the {@link #blocks} */
+Alarm.prototype.ResetMilestones = function() {
+	this.milestones = [];
+	var a = this;
+	var now = new Milestone();
+	// @type {number[]}
+	var minutesList = [];
+	function __AddMilestone(toAdd) {
+		var minutes = Milestone_minutesBetween(now, toAdd);
+		// insert the milestones in order, with soonest first
+		var index = 0;
+		for(;index < minutesList.length && minutesList[index] < minutes; ++index);
+		minutesList.splice(index, 0, minutes);
+		a.milestones.splice(index, 0, toAdd);
+	}
+	for(var i = 0; i < this.blocks.length; ++i) {
+		var b = this.blocks[i];
+		if(!b) {
+			console.log("null block?");
+			console.log(this.blocks);
+		}
+		var duration = b.getDurationMinutes();
+		if (duration == 0) {
+			__AddMilestone(Milestone_minutesAfterBegin(b, b.name, 0, -1, null));
+		}
+		var replaceText = b.name;
+		var it = this.spec.periodNameTranslation[b.name.trim()];
+		if(it != undefined) { replaceText = it; }
+		var toReplace = ["$(name)"], toReplaceWith = [replaceText];
+		for(var n = 0; n < this.spec.alarms.length; n++) {
+			var al = this.spec.alarms[n];
+			if(b.alarmsUsed && (b.alarmsUsed.length == 0
+			|| b.alarmsUsed.indexOf(al.label) >= 0)) {
+				var toAdd = null;
+				var min = parseInt(al.time);
+				if(duration > min) {
+					var text = String_Replace(al.message, toReplace, toReplaceWith);
+					if(al.beginOrEnd[0].toLowerCase() == "e") {
+						toAdd = Milestone_minutesBeforeEnd(b, text, min, n, al.voiceChoice, al.randomVoice);
+					} else {
+						toAdd = Milestone_minutesAfterBegin(b, text, min, n, al.voiceChoice, al.randomVoice);
+					}
+				}
+				if(toAdd && toAdd.text.length != 0) {
+					__AddMilestone(toAdd);
+				}
+			}
+		}
+	}
+	this.printSchedule();
+}
+
+Alarm.prototype.printSchedule = function() {
+	var now = new Milestone(), m = null;
+	if(this.milestones.length > 0) {
+		var cout = "";
+		for(var i = 0; i < this.milestones.length; ++i) {
+			m = this.milestones[i];
+			var minutes = Milestone_minutesBetween(now, m);
+			if (i > 0) cout += "\n";
+			cout += parseInt(minutes)+" -- "+m;
+		}
+		console.log(cout);
+	}// else { console.log("no more warning messages for today"); }
+}
+
+Alarm.prototype.SortMilestones = function() {
+	var now = new Milestone(), toAdd = null;
+	var minutesList = [];
+	var index = -1;
+	for(var i = 0; i < this.milestones.length; ++i) {
+		toAdd = this.milestones[i];
+		var minutes = Milestone_minutesBetween(now, toAdd);
+		index = 0;
+		for(; index < minutesList.length && minutesList[index] <= minutes; ++index){
+			if(minutesList[index] == minutes){
+				// console.log("PRIORITY: "+toAdd.text+"("+toAdd.priority+") BEFORE "+this.milestones[index].text+"("+this.milestones[index].priority+")");
+				break;
+			}
+			if(minutesList[index] > minutes) { break; }
+		}
+		this.milestones.splice(i, 1);
+		if(minutes >= 0) {
+			minutesList.splice(index, 0, minutes);
+			this.milestones.splice(index, 0, toAdd);
+		} else { i--; }
+	}
+	// this.printSchedule();
+}
+
+Alarm.prototype.refreshCurrentTimeline = function(date, endDate = undefined) {
+	var n = date;
+	if(!n){n = newDate();}
+	if(!date || !endDate) {
+		n = new Date(n.getFullYear(), n.getMonth(), n.getDate(), 0,0,0,0);
+	}
+	if(!endDate) { endDate = new Date(n); endDate.setDate(n.getDate() + 1); }
+	this.whenTodayEnds = Seconds(endDate);
+	return n;
+}
+var FILENAME_TOKEN = "$(filename)"
+var FILE_NOT_FOUND_ERROR = "no valid \""+FILENAME_TOKEN+"\"";
+Alarm.prototype.getFile = function(filename, cb) {
+	var a = this;
+	var nameTried = filename;
+	String_FromFile(filename, function(err, data) {
+		if(!data || data.length == 0) {
+			// String_FromFile(a.currentPath + filename, function(err, data) {
+			// 	// otherwise, load the file from the web, and add it to the folder
+			// 	if(!data || data.length == 0) {
+					// var urlEncodedFilename = String_Replace(filename, [" "], ["%20"]);
+					// console.log("seeking file on internet: "+filename+" as "+a.homeURL+urlEncodedFilename);
+					// data = String_FromFile(a.homeURL+urlEncodedFilename, function(err, data) {
+						var index, found = [-1];
+						var badPages = ["<!DOCTYPE","<title>404 Not Found</title>"];
+						if(!data || data == "" || (index = String_FindTheNextOfThese(data, badPages, 0, found)) >= 0){
+							var error = String_Replace(FILE_NOT_FOUND_ERROR, [FILENAME_TOKEN], [filename]);
+							if(filename.substring(filename.length-4, filename.length) == ".txt") {
+								filename = filename.substring(0, filename.length-4);
+							}
+							data = null;
+							if(found[0] != -1) {
+								console.log("instead, found \""+ badPages[found] + "...\"");
+							}
+							cb(error,data);
+						} else {
+							console.log("saving "+(a.currentPath + filename));
+							cb(null,data);
+						}
+					//});
+			//	} else {
+			//		cb(null,data);
+			//	}
+			//});
+		} else {
+			cb(null, data);
+		}
+	});
+}
+
+function DateFormatFile(date) {
+	if(!date)date = newDate();
+	return (date.getMonth()+1)+"-"+String_NumberLead0s(date.getDate(),2)+"-"+date.getFullYear();
+}
+function FileFormatDate(filetext) {
+	var dayparts = String_Split(filetext, ["-"], false);
+	dayparts[0] = parseInt(dayparts[0]);
+	dayparts[1] = parseInt(dayparts[1]);
+	dayparts[2] = parseInt(dayparts[2]);
+	return new Date(dayparts[2], dayparts[0]-1, dayparts[1]);
+}
+/**
+@return {number} the index in the database that should be for the given date. if the database does not have an entry for the date, return the index of the nearest date *after* the given date. If no such dates exist, return -1
+*/
+Alarm.prototype.DayIndex = function (database, date=null) {
+	if(!date) { date = newDate(); }
+	var bestIndex = -1, bestD = null;
+	for(var i=0;i<database.length;++i) {
+		var entries = String_Split(database[i],["\t","\n","\r"], false);
+		var thisDay = FileFormatDate(entries[0]);
+		if((bestD == null && thisDay >= date)
+		|| (bestD != null && thisDay < bestD)) {
+			bestD = thisDay;
+			bestIndex = i;
+		}
+	}
+	return bestIndex;
+}
+/** @return {string[]} */
+Alarm.prototype.DayEntries = function(database, date, endDate = undefined) {
+	var entries = null;
+	var i = this.DayIndex(database,date);
+	if(i >= 0) {
+		var limit = i;
+		if(endDate) {
+			limit = this.DayIndex(database,endDate);
+			if(limit == i || limit < 0) {
+				limit = i;
+			}
+		}
+		limit += 1;
+		entries = [];
+		for(; i < limit; i++) {
+			entries.push(String_Split(database[i],["\t","\n","\r"], false));
+		}
+	}
+	return entries;
+}
+
+Alarm.prototype.ParseDaySchedule = function (realScheduleText) {
+	/** {string[][]} */
+	var scheduleTable = [];
+	var lines = String_Split(realScheduleText, ["\n","\r"], false);
+	for(var b=0; b<lines.length; ++b) {
+		scheduleTable.push(String_Split(lines[b], ["\t",","], false));
+	}
+	return scheduleTable;
+}
+
+/**
+@param date {Date}
+@param endDate {Date}
+@param cb {function(Error,Block[])}
+*/
+Alarm.prototype.LoadBlocksByDate = function(date, endDate, cb) {
+	var blocks = [];
+	if(!endDate) {
+		endDate = new Date(date);
+		endDate.setDate(date.getDate()+1);
+	}
+	// add a block for each day
+	var d = new Date(date);
+	while(d < endDate) {
+		var b = new Block(null, "0:00", "24:00", d);
+		b.alarmsUsed = null;
+		blocks.push(b);
+		d = AddDate(d, {d:1});
+	}
+	var a = this;
+	// @type {string[]}
+	var entries = a.DayEntries(a.spec.database, date, endDate);
+	var hasValidEntries = entries && entries.length > 0;
+	var blocksForDayEntries = [];
+	if(hasValidEntries) {
+		hasValidEntries = false;
+		for(var i = 0; i < entries.length; i++) {
+			if(entries[i].length >= 2) {
+				hasValidEntries = true;
+				var edate = FileFormatDate(entries[i][0]);
+				if(edate >= date && edate < endDate) {
+					var b = new Block(entries[i][1], "0:00", "24:00", edate);
+					b.alarmsUsed = null;
+					blocksForDayEntries.push(b);
+				}
+			}
+		}
+	}
+	
+	function __ProcessScheduleBlocks() {
+		if(ById("showeveryschedulename").checked) {
+			blocks = blocks.concat(blocksForDayEntries);
+		}
+		// get blocks from the UTC list
+		if(a.spec.utcevents) {
+			blocks = blocks.concat(a.ParseUTCEventListIntoBlocks(a.spec.utcevents, date));
+		}
+		if(blocks.length > 0) {
+			a.unableToFindSchedule = false;
+			// sort the blocks
+			blocks.sort(function(a,b){ return (a.start<b.start)?-1:(a.start>b.start)?1:0;});
+		}
+		cb(null, blocks);
+	}
+
+	if(!hasValidEntries) {
+		//console.log("no schedule found for "+ DateFormatFile(date));
+		__ProcessScheduleBlocks();
+	} else {
+		var entryIndex = 0;
+		function __ProcessEntries() {
+			var scheduleTypes = entries[entryIndex].slice(1);
+			// console.log("loading "+scheduleTypes+" ("+entries[entryIndex][0]+")")
+			// adjust the date to match the entry that is being loaded
+			var dayparts = String_Split(entries[entryIndex][0], ["-"], false);
+			date = new Date(dayparts[2], dayparts[0]-1, dayparts[1]);
+			if(date >= endDate) {
+				__ProcessScheduleBlocks();
+				return;
+			}
+			a.unableToFindSchedule = false;
+			// console.log("A"+ConvertDateToUTCString(date));
+			a.LoadSchedulesTable(scheduleTypes, date, function(error, scheduleTable){
+				// get blocks from the schedule files
+				if(error) { // if some days did not have schedules
+					for(var i = 0; i < error.length; i++) {
+						// make sure there is *some* kind of entry, at least the schedule name
+						var index = blocksForDayEntries.findIndex(function(element) {
+							return IsSameDay(error[i].date, element.start);
+						});
+						if(index >= 0){
+							var b = blocksForDayEntries[index];
+							blocksForDayEntries.splice(index,1);
+							blocks.push(b);
+						}
+					}
+				}
+				blocks = blocks.concat(a.ParseScheduleTableIntoBlocks(scheduleTable, true, date));
+				entryIndex++;
+				if(entryIndex < entries.length) {
+					__ProcessEntries();
+				} else {
+					__ProcessScheduleBlocks();
+				}
+			});
+		}
+		__ProcessEntries();
+	}
+}
+
+Alarm.prototype.BlocksToBasicScheduleText = function(blocks) {
+	var text = ""
+	for(var i = 0; i < blocks.length; ++i) {
+		if(i > 0) text += "\n"
+		text += blocks[i].name + "\t" + 
+		blocks[i].start.getHours() + ":" +
+		String_NumberLead0s(blocks[i].start.getMinutes(), 2) + "\t" +
+		blocks[i].end.getHours() + ":" +
+		String_NumberLead0s(blocks[i].end.getMinutes(), 2);
+	}
+	return text;
+}
+Alarm.prototype.LoadTheSchedule = function(date, endDate, cb) {
+	var a = this;
+	var d = date;
+	if(d == null) { d = newDate(); }
+	if (__Persist.daySource != null && __Persist.daySource.value) {
+		unableToFindSchedule = false;
+		console.log(__Persist.daySource.value);
+		a.scheduleDate = newDate();
+		a.UseTheseBlocks(a.ParseScheduleTableIntoBlocks(
+			a.ParseDaySchedule(__Persist.daySource.value)));
+		cb();
+	} else {
+		a.LoadScheduleByDate(d, endDate, cb);
+	}
+}
+Alarm.prototype.UseTheseBlocks = function(blocks) {
+	var a = this;
+	a.blocks=blocks;
+	// create the milestones
+	a.ResetMilestones();
+	a.SortMilestones(); // sort the milestones
+	// console.log(blocks);
+	a.currentlyLoadedDailySchedule = a.BlocksToBasicScheduleText(blocks);
+	// console.log(a.currentlyLoadedDailySchedule);
+}
+/**
+if we have the day-schedule-name, call LoadScheduleNamed(<schedule name>, cb)
+if we have the schedule data, call LoadScheduleFromData(<schedule data>, cb)
+@param cb{function(Error)}
+*/
+Alarm.prototype.LoadScheduleByDate = function(date, endDate, cb) {
+	var a = this;
+	// console.log("date for schedule is: "+date);
+	a.refreshCurrentTimeline(date, endDate);
+	a.scheduleDate = date;
+	function __getBlocksAndCreateMilestones() {
+		a.LoadBlocksByDate(date, endDate, function(err,blocks) {
+			a.UseTheseBlocks(blocks);
+			cb();
+		});
+	}
+	// if there's no database
+	if(!a.spec.database || a.spec.database.length == 0) {
+		// load the database MasterSchedule from the rootFile
+		a.getFile(a.rootFile, function(err, schedulefiledata){
+			if(err) {
+				a.databaseError = err;
+				console.log(err);
+				schedulefiledata = a.rootFile+"\t0:00\t24:00"; // make up a schedule for today
+			}
+			var database = String_Split(schedulefiledata, ["\n"], false);
+			a.spec.database = database;
+			__getBlocksAndCreateMilestones();
+		});
+	} else {
+		// if we have the database, use it to get the day's schedule 
+		__getBlocksAndCreateMilestones();
+	}
+}
+Alarm.prototype.LoadScheduleText = function(schedulename, cb) {
+	var a = this;
+	if(a.spec.scheduleTypes && a.spec.scheduleTypes[schedulename]) {
+		var scheduleTypeText = a.spec.scheduleTypes[schedulename];
+		cb(null, scheduleTypeText);
+	} else { // otherwise, go looking for the file
+		a.getFile(schedulename.trim()+".txt", function(err, scheduleTypeText){
+			if(err){cb(err);return;}
+			if(!a.spec.scheduleTypes) { a.spec.scheduleTypes = {}; }
+			a.spec.scheduleTypes[schedulename] = scheduleTypeText;
+			cb(null, scheduleTypeText);
+		});
+	}
+}
+/**
+@param schedulenames {string[]} a list of the schedule types to put into the table
+@param date {Date}
+@param cb {function(Error,string[][])} what to call when the voice is finished
+*/
+Alarm.prototype.LoadSchedulesTable = function(schedulenames, date, cb) {
+	var a = this;
+	var masterTable = [];
+	var scheduleNamesTried = 0;
+	var errors = null;
+	function __AddToMasterScheduleTable() {
+		var schedulename = schedulenames[scheduleNamesTried];
+		console.log("getting "+schedulename+" ("+ConvertDateToUTCString(date)+")");
+		a.LoadScheduleText(schedulename, function(err, scheduleTypeText) {
+			if(err) {
+				// console.log("error loading "+schedulename+": "+JSON.stringify(err));
+				// keep loading other schedules even if one failed.
+				if(!errors) { errors = []; }
+				var prefixEnd = FILE_NOT_FOUND_ERROR.indexOf(FILENAME_TOKEN);
+				var suffixStart = prefixEnd + FILENAME_TOKEN.length;
+				var prefix = FILE_NOT_FOUND_ERROR.substring(0, prefixEnd);
+				if(err.startsWith(prefix)) {
+					var nameEnd = err.indexOf(FILE_NOT_FOUND_ERROR.substring(suffixStart), prefixEnd+1);
+					var filename = err.substring(prefixEnd, nameEnd);
+					var filesuffixIndex = filename.lastIndexOf(".");
+					if(filesuffixIndex >= 0) {
+						filename = filename.substring(0, filesuffixIndex);
+					}
+					errors.push({name:filename, date:date});
+				}
+			}
+			if(scheduleTypeText) {
+				var scheduleTable = a.ParseDaySchedule(scheduleTypeText);
+				masterTable = masterTable.concat(scheduleTable);
+			}
+			scheduleNamesTried++;
+			if(scheduleNamesTried == schedulenames.length) {
+				// console.log("GOT IT "+JSON.stringify(masterTable));
+				cb(errors,masterTable);
+			} else {
+				setTimeout(__AddToMasterScheduleTable, 0);
+			}
+		});
+	}
+	__AddToMasterScheduleTable();
+}
+
+/** prototype the function that will start everything. */
+var StartAlarms = null;
+
+/** checks the time every second. if its time for an un-triggered warning, trigger it. */
+Alarm.prototype.run = function() {
+	if(this.running) { console.log("OH NO! ALREADY RUNNING!"); }
+	this.running = true;
+	var now = 0;
+	var nextMessage = "";
+	var a = this;
+	function __runLoop() {
+		now = Seconds();
+		const lag = 2;
+		var whenToStopWaiting = now+lag+1;
+		if(a.milestones.length > 0) {
+			var m = a.milestones[0];
+			while(!m.text && a.milestones.length > 0) {
+				a.milestones.splice(0,1);
+				if(a.milestones.length != 0) {
+					m = a.milestones[0];
+				} else {
+					m = null;
+					whenToStopWaiting = Seconds();
+					__Persist.whenNextMessageWillBe = whenToStopWaiting;
+					nextMessage = "";
+					UpdateOutput(nextMessage);
+					break;
+				}
+			}
+			if(m) {
+				__Persist.hasRunOut = 0;
+				whenToStopWaiting = Seconds(m.moment);
+				__Persist.whenNextMessageWillBe = whenToStopWaiting;
+				nextMessage = m.text;
+				if(Seconds(m.moment) < now) {
+					if(m.isNow() && !m.isTriggered()) { m.trigger(); }
+					a.milestones.splice(0,1);
+					UpdateOutTable(a);
+					if(a.milestones.length == 0) {
+						nextMessage = "";
+					}
+				}
+				UpdateOutput();
+			}
+		} else {
+			if(a.unableToFindSchedule) {
+				var secondsLeftOfDay = a.whenTodayEnds - now;
+				var soon = TimePrint(secondsLeftOfDay);
+				var tomorrow = newDate();
+				tomorrow.setDate(tomorrow.getDate() + 1);
+				var dateString = ConvertDateToUTCString(tomorrow);
+				var cout = dateString+" starts ";
+				if (soon != "") { cout += "in "+soon; } else { cout+= "now."; }
+				UpdateOutput(cout);
+				if(secondsLeftOfDay <= 0) {
+					a.running = false; // stop this Alarm system
+					StartAlarms(); // start a new system
+				}
+				a.refreshCurrentTimeline();
+			} else {
+				a.unableToFindSchedule = true;
+				a.running = false;
+				// var d = newDate();
+				var maxTomorrows = a.databaseError ? 0 : 365;
+				var timeOffset = {d:1};
+				var LoadUpTomorrow = function() {
+					// AddToDate(1);
+					if(GetDayCount() >= 5) {
+						var autoadvance = ById("autoadvanceatlimit").checked;
+						if(autoadvance) {
+							var limitDate = GetStartDate();
+							limitDate.setDate(limitDate.getDate()+GetDayCount());
+							var dateNow = newDate();
+							// if the natural passage of time has pushed to the end of the known schedule
+							if(dateNow >= limitDate) {
+								// move to tomorrow
+								AddToDate(1);
+								RestartAlarms();
+							}
+						}
+						return;
+					}
+					AddToDayCount(1);
+					//console.log(ConvertDateToUTCString(GetStartDate()));
+					a.LoadTheSchedule(GetStartDate(), GetEndDate(), function() {
+						UpdateOutTable(a);
+						if(a.unableToFindSchedule){
+							if(maxTomorrows > 0){
+								maxTomorrows--;
+								console.log(maxTomorrows);
+								setTimeout(LoadUpTomorrow,10);
+							} else {
+								console.log("out of schedule!");
+								ById("useCustomScheduleCheckbox").checked = true;
+								reloadCustomSchedule();
+								// a.run();
+							}
+						} else {
+							a.run();
+						}
+					});
+				}
+				LoadUpTomorrow();
+			}
+		}
+		var whenPrint = 0;
+		function __waitLoop() {
+			UpdateOutput();
+			var whenToStopWaitingForReal = whenToStopWaiting - lag;
+			if((now = Seconds()) < whenToStopWaitingForReal && a.running && !a.waitinterrupted) {
+				if(now >= whenPrint && nextMessage.length > 0) {
+					whenPrint = whenToStopWaiting - now;
+					if(whenPrint > 1) { whenPrint /= 2; }
+					whenPrint += now;
+				}
+				setTimeout(__waitLoop, 1000);
+			} else {
+				if(a.running) { __runLoop(); }
+			}
+		}
+		a.waitinterrupted = false;
+		setTimeout(__waitLoop, 1000);
+	}
+	__runLoop();
+}
+/** copies 'src' members into 'dest' if 'dest' is missing those members, or has those members as empty data structures */
+function CopyIntoIfNotEmpty(dest, src, membersToIgnore) {
+	for(var k in src) {
+		if((!membersToIgnore || membersToIgnore.indexOf(k) < 0)
+		&&(!dest[k]
+		|| (Array.isArray(dest[k]) && dest[k].length == 0)
+		|| (typeof dest[k] === "object" && Object.keys(dest[k]).length == 0))) {
+			dest[k] = src[k];
+		}
+	}
+}
+function StopAlarms() {
+	if(__Alarm) { __Alarm.running = false; __Alarm.waitinterrupted = true; }
+	__Alarm = null;
+}
+function RestartAlarmsManually() {
+	StopAlarms();
+	ChangeElementVisibility(ById('startbutton'), true);
+}
+function RestartAlarms() {
+	StopAlarms();
+	StartAlarms(__Persist.daysource);
+}
+function ReloadThePage() {
+	var loc = window.location.href;
+	window.location.href = loc.substring(0, loc.indexOf('?'));
+}
+StartAlarms = function (dataSource = null) {
+	reloadDateOffset();
+	var a = __Alarm;
+	if(!a) { a = new Alarm(); __Alarm = a; }
+	// storage for data that remains in between reloads of alarms
+	if(dataSource != null) { __Persist.daySource = dataSource; }
+	if(!GetStartDateTxt()) { // check where the UI has set the start date to. if there is no set date, start now
+		var date = newDate();
+		SetStartDate(date, a);
+	}
+	// check if there is URL encoded data for the alarm
+	var urlParams = GetUrlVars();
+	var alarmSpec = null;
+	var entirePageNeedsReloadingAfterURLArgsAreaCached = false;
+	var storage = window.localStorage; // window.sessionStorage; //
+	// if there are URL params, save those locally and reload, to reduce the size of the URL (a long URL causes lag with console.log)
+	if(urlParams["spec"]) {
+		alarmSpec = atob(urlParams["spec"]);
+		if(storage) {
+			storage.setItem("spec", alarmSpec);
+			entirePageNeedsReloadingAfterURLArgsAreaCached = true;
+		}
+	}
+	if(entirePageNeedsReloadingAfterURLArgsAreaCached) {
+		ReloadThePage(); return;
+	}
+	// reload locally saved settings
+	if(storage) {
+		alarmSpec = storage.getItem("spec");
+		if(alarmSpec && alarmSpec != "" && alarmSpec != "null") {
+			Parse_IntoObject(alarmSpec, new Parse_Cursor(1,1,0), a.spec);
+		} else {
+			ChangeElementVisibility(ById("clearSpec"), false);
+		}
+	}
+	// if the alarms aren't loaded yet (nothing locally saved), load them
+	if(!a.spec.alarms || a.spec.alarms.length == 0) {
+		var alarmSettings = Alarm_STANDARD_FILE;//GetAlarmSettings();
+		var defaultAlarm = {};
+		Parse_IntoObject(alarmSettings, new Parse_Cursor(1,1,0), defaultAlarm);
+		CopyIntoIfNotEmpty(a,      defaultAlarm,     ["spec"]);
+		CopyIntoIfNotEmpty(a.spec, defaultAlarm.spec);
+	}
+	// load up the UTC events
+	if((!a.spec.utcevents || a.spec.utcevents.length == 0)
+	&& (a.spec.utceventstext && a.spec.utceventstext.length > 0)) {
+		a.spec.utcevents = String_Split(a.spec.utceventstext, ["\n","\r"], false);
+		for(var i=0;i<a.spec.utcevents.length;++i){
+			var e = a.spec.utcevents[i];
+			e = String_Split(e,["\t"],false);
+			a.spec.utcevents[i] = e;
+		}
+	}
+	a.LoadTheSchedule(GetStartDate(), GetEndDate(), function() {
+		UpdateOutTable(a);
+		if(!a.running) { a.run(); }
+		// console.log(a);
+		var customScheduleField = ById("today");
+		if (!customScheduleField.value || customScheduleField.value == "undefined") {
+			customScheduleField.value = a.currentlyLoadedDailySchedule;
+		}
+		AdvancedSettingsRefresh();
+	});
+}
+// can't do this. The entire system must be started by the user, otherwise the voices won't play
+//addEventListener('DOMContentLoaded', StartAlarms);
+
+/** puts text into the message area at the top. Also updates visible timer */
+function UpdateOutput(text) {
+	var out = ById("out");
+	if(out) {
+		if(!text) {
+			var cout = "", text = "";
+			if(__Alarm && __Alarm.milestones.length > 0 && __Alarm.milestones[0]) {
+				text = __Alarm.milestones[0].text;
+				if(text && text.length > 0) {
+					cout += "The next message will be:<br><span id='voice'>"+text+"</span>";
+				}
+				var waitingLeft = parseInt(__Persist.whenNextMessageWillBe - Seconds());
+				if(waitingLeft > 0) {
+					cout += "<br>in ";
+					cout += TimePrint(waitingLeft);
+				} else { cout += "<br>"; }
+				out.innerHTML = cout;
+			} else {
+				out.innerHTML = "<br>";
+			}
+		} else {
+			out.innerHTML = text;
+		}
+	}
+}
+
+// called by the button underneath the custom schedule box
+function reloadCustomSchedule() {
+	var e = ById("useCustomScheduleCheckbox");
+	var a = __Alarm;
+	if (e.checked) {
+		__Persist.daySource = ById("today");
+	} else {
+		__Persist.daySource = null;
+	}
+	RestartAlarms();
+}
+
+function reloadDefaultSettings() {
+	var storage = window.localStorage;
+	storage.setItem("spec", null);
+}
+function saveCustomScript() {
+	if(SaveAlarmSettingsToPage()) {
+		RestartAlarms();
+		ChangeElementVisibility(ById('clearSpec'), 'inline');
+	}
+}
+function AllowTabsInTextArea(e) {
+	if(e.keyCode==9 || e.which==9){
+		e.preventDefault();
+		var s = this.selectionStart;
+		this.value = this.value.substring(0,this.selectionStart) + "	" + this.value.substring(this.selectionEnd);
+		this.selectionEnd = s+1; 
+	}
+}
+addEventListener('DOMContentLoaded', function() {
+	var settings = ById("alarmsettings");
+	settings.onkeydown = AllowTabsInTextArea;
+	var today = ById("today");
+	today.onkeydown = AllowTabsInTextArea;
+});
+
+function HTMLTable_PrettyPrint(d) {
+	var html = "";
+	html += ["Sunday","Monday","Tuesday","Wednesday","Thursday","Friday","Saturday"][d.getDay()];
+	html += " ";
+	html += ["January","February","March","April","May","June","July","August","September","October","November","December"][d.getMonth()];
+	html += " ";
+	html += d.getDate()+", "+d.getFullYear();
+	return html;
+}
+function HTMLTable_DayMarker(d, _class) {
+	var html ="<tr";
+	if(_class){
+		html+=" class=\'"+_class+"\'"
+	}
+	return html+"><th colspan=3>"
+	+HTMLTable_PrettyPrint(d)+"</th></tr>";
+}
+function HTMLTable_BlockRow(b, span) {
+	var html = "";
+	html += span?"<tr class='"+span+"'>":"<tr>";
+	var hr = b.start.getHours();
+	var daySeciton = (hr < 12)?"am":"pm";
+	if(hr > 12) { hr -= 12; }
+	if(hr == 0) { hr = 12; }
+	html+="<th>"+b.name+"</th><td>";
+	html+=hr+":"+String_NumberLead0s(b.start.getMinutes(),2)+" "+daySeciton;
+	html+="</td><td>";
+	hr = b.end.getHours();
+	var daySeciton = (hr < 12)?"am":"pm";
+	if(hr > 12) { hr -= 12; }
+	if(hr == 0) { hr = 12; }
+	html+= hr+":"+String_NumberLead0s(b.end.getMinutes(),2)+" "+daySeciton
+	html+="</td></tr>";
+	return html;
+}
+function HTMLTable_LabelBlock(b, span) {
+	var html = "";
+	html += span?"<tr class='"+span+"'>":"<tr>";
+	var name = b.name;
+	if(!name) {
+		name = HTMLTable_PrettyPrint(b.start);
+	}
+	html+="<td colspan = 3>"+b.name+"</td></tr>";
+	return html;
+}
+function HTMLTable_Blocks(blocks, startIndex, endIndex, now) {
+	var html = "";
+	var nextMarked = false;
+	for(var r = startIndex;r < endIndex;++r) {
+		var span = "future";
+		if(blocks[r].start < now) {
+			span = "old";
+			if(blocks[r].end > now) { span = "now"; nextMarked = true; }
+		} else if(!nextMarked) {
+			span = "soon";
+			nextMarked = true;
+		}
+		if(!blocks[r].name){
+			html+=HTMLTable_DayMarker(blocks[r].start, span);
+		} else {
+			if (blocks[r].alarmsUsed != null) {
+				html+=HTMLTable_BlockRow(blocks[r], span);
+			} else {
+				html+=HTMLTable_LabelBlock(blocks[r], span);
+			}
+		}
+	}
+	return html;
+}
+function UpdateOutTable(a) {
+	if(!a){a = __Alarm;}
+	var d = a.scheduleDate;
+	var out = ById("outtable");
+	var html = "";
+	var txtR = "style=\"text-align:right\"";
+	var txtC = "style=\"text-align:center\"";
+	html+="<table "+txtR+">";
+	// html+="<tr><td></td><th "+txtC+">from</th><th "+txtC+">to</th></tr>";
+	var now = newDate();
+	html += HTMLTable_Blocks(a.blocks, 0, a.blocks.length, now);
+	html += "</table>";
+	out.innerHTML = html;
+}
+function __GetDate() {
+	var date = ById("startdate");
+	var days = ById("daycount");
+	var v = 1;
+	try{v = Number(days.value);}catch(e){}
+	var s = ConvertUTCToDate(date.value, true);
+	var delta = {d:v};
+	var e = AddDate(s, delta);
+	if(v < 0) { var temp = s; s = e; e = temp; }
+	return [s,e];
+}
+function GetDayCount() {
+	var days = ById("daycount");
+	var v = 1;
+	try{v = Number(days.value);}catch(e){}
+	return v;
+}
+function AddToDayCount(num) {
+	ById("daycount").value = GetDayCount() + num;
+}
+
+function SetStartDate(date=undefined) {__SetDate(date, ById("startdate"));}
+function GetStartDateTxt() { return ById("startdate").value; }
+function GetStartDate() { return __GetDate()[0]; }
+function GetEndDate()   { return __GetDate()[1]; }
+function AddToDate(n, userButton=false) {
+	var d = {d:n};
+	SetStartDate(AddDate(GetStartDate(),d));
+	// if the user pressed the next/prev button
+	if(userButton) {
+		var autoadvanceelement = ById("autoadvanceatlimit");
+		var autoadvance = autoadvanceelement.checked;
+		var startDate = GetStartDate();
+		var limitDate = new Date(startDate);
+		limitDate.setDate(limitDate.getDate()+GetDayCount());
+		var dateNow = newDate();
+		// turn on or off the autoadvancement
+		var inDateRange = dateNow >= startDate && dateNow < limitDate;
+		autoadvanceelement.checked = inDateRange;
+	}
+	RestartAlarms();
+}
+function __SetDate(date = undefined, e = undefined) {
+	var d = date;
+	if(date !== undefined) {
+		if (typeof date != 'string') { d = ConvertDateToUTCString(date); }
+		e.value = d;
+	}
+}
+</script>
+<style>
+#out { -moz-user-select: none; -khtml-user-select: none; -webkit-user-select: none; -ms-user-select: none; user-select: none; }
+#settings { font-style:normal }
+#settingsarea { display: none; }
+#voice { color: #4444ff; font-family:monospace; font-weight: bold; font-size: 12pt;}
+#restOfUI {background-color:#ffffffaa; width: fit-content;}
+html{font-family: sans-serif; font-size:12pt;}
+td{padding: 0px 10px; }
+.numfield{text-align: right;}
+.old{color:#888;font-style: italic;}
+.now{font-weight: bold;color:blue;}
+.soon{font-style: italic;}
+.future{ font-style:normal }
+.settings{background-color:#eee;border: 2px solid #ddd;padding:10px 10px 10px 10px;}
+body {background-color:#888;}
+#info {
+	position:fixed;
+	bottom:0px;right:0px;
+	background-image:url(chronovoice512.png);
+	background-position:right bottom;
+	height:512px;width:512px;
+	z-index: -10;
+}
+</style>
+<link rel="shortcut icon" href="chronovoice512.png" />
+<link rel="apple-touch-icon" href="chronovoice512.png" />
+</head>
+<body>
+<div id="info">
+	<div style="position: absolute; bottom: 0; left: 0;">http://codegiraffe.com/chronovoice</div>
+</div>
+<button id="startbutton" onclick="RestartAlarms();ChangeElementVisibility(ById('startbutton'),false);ChangeElementVisibility(ById('restOfUI'),true);" style="width:100%;font-size:100pt;">Start!</button>
+<img src="" style="position: fixed; right: 0; top: 0; transform: scaleX(-1);">
+<div id="restOfUI" style="display:none">
+<span id="dayNavigation"><button onclick="AddToDate(-1,true)">&lt; prev day</button> &nbsp; &nbsp; <button onclick="AddToDate(+1,true)">next day &gt;</button></span>
+<p id="out"><br></p>
+<div id="outtable"></div>
+<br>
+<span><br>
+	<input type="checkbox" id="showsettings" onclick="ChangeElementVisibility(ById('settingsarea'),this.checked);">
+	<span onclick="ToggleSiblingCheckbox(this);">settings</span>
+</span>
+<div id="settingsarea">
+	<br>
+	<button id="voicedo" onclick="Voice_Speak(ById('voicewords').value, ById('voiceselect').value);">test speech</button>
+	<select id="voiceselect"><!-- will be filled in by JavaScript --></select>
+	<input id="voicewords" value='testing. 1, 2, 3.'>
+<script> // setup voice testing UI
+function voicedo(event){event.preventDefault();if(event.keyCode===13){ById("voicedo").click();}}
+var input = ById("voiceselect"); input.addEventListener("keyup", voicedo);
+input = ById("voicewords"); input.addEventListener("keyup", voicedo); ChangeElementVisibility(input, false);
+</script><br>
+	<br><input type="checkbox" id="mute" name="mute" value="mute"><span onclick="ToggleSiblingCheckbox(this)">mute all</span><br>
+	<span><br><input id="datecontrols_check" type="checkbox" onclick="ChangeElementVisibility(ById('datecontrols'),this.checked);">
+		<span onclick="ToggleSiblingCheckbox(this)">schedule display settings</span></span><br>
+		<div id="datecontrols" style="display:none" class="settings">
+			<input type="date" id="startdate">
+			days: <input id="daycount" value="1" size="3">
+			<button onclick="RestartAlarms();">Reload</button>
+			<span><br>
+				<input type="checkbox" id="showeveryschedulename">
+				<span onclick="ToggleSiblingCheckbox(this)">always show schedule names</span>
+			</span>
+			<span><br>
+				<input type="checkbox" id="autoadvanceatlimit" checked=true onclick="RestartAlarms();">
+				<span onclick="ToggleSiblingCheckbox(this)">advance schedule to show today</span>
+			</span>
+		</div>
+	<span><br>
+		<input type="checkbox" name="editschedule" id="editschedule" value="edit" onclick="ChangeElementVisibility(ById('customschedule'),this.checked);">
+		<span onclick="ToggleSiblingCheckbox(this)">custom schedule</span><br>
+	</span>
+	<div id="customschedule" style="display:none;" class="settings">
+		<div>minutes late (adjusts schedule) <input type="number" id="lateOffset" onchange="reloadCustomSchedule();RestartAlarms();"></div>
+		<textarea name="today" id="today" cols="70" rows="10">
+This morning	0:00	12:00
+Today	12:00	20:00
+This evening	20:00	24:00</textarea>
+		<span><br>
+			<input type="checkbox" id="useCustomScheduleCheckbox" onclick="reloadCustomSchedule();">
+			<span onclick="ToggleSiblingCheckbox(this)">use this custom schedule</button></span><br>			
+		</span>
+	</div>
+	<span><br>
+		<input type="checkbox" name="offsettime" value="edit" onclick="ChangeElementVisibility(ById('timeoffset'),this.checked);">
+		<span onclick="ToggleSiblingCheckbox(this)">time offset</span><br>
+	</span>
+	<div id="timeoffset" style="display:none;" class="settings">
+		<input id="timeoffset.s" class="numfield" placeholder="seconds" onchange="setDateOffset()" size=4>seconds &nbsp; &nbsp; 
+		<input id="timeoffset.m" class="numfield" placeholder="minutes" onchange="setDateOffset()" size=4>minutes &nbsp; &nbsp; 
+		<input id="timeoffset.h" class="numfield" placeholder="hours" onchange="setDateOffset()" size=4>hours &nbsp; &nbsp; 
+		<input id="timeoffset.d" class="numfield" placeholder="days" onchange="setDateOffset()" size=4>days &nbsp; &nbsp; 
+		<button onclick="RestartAlarms();">Reload</button>
+		<br><br>(see <a href="https://time.is/">https://time.is/</a> to determine if offset is needed)
+	</div>
+	<span><br>
+		<input type="checkbox" name="editsettings" value="edit" onclick="ChangeElementVisibility(ById('customsettings'),this.checked);AdvancedSettingsRefresh();">
+		<span onclick="ToggleSiblingCheckbox(this)">advanced script editing</span><br>
+	</span>
+	<div id="customsettings" style="display:none;" class="settings">
+		<div id="div_voicealarms" style="display:none" class="settings">
+			<textarea id="txt_voicealarms" cols="80" rows="24"></textarea>
+		</div>
+		<div id="div_periodnametranslation" style="display:none" class="settings">
+			<textarea id="txt_periodnametranslation" cols="80" rows="24"></textarea>
+		</div>
+		<div id="div_calendar" style="display:none" class="settings">
+			<textarea id="txt_calendar" cols="80" rows="24"></textarea>
+		</div>
+		<textarea name="settings" id="alarmsettings" cols="80" rows="24"></textarea>
+		<br>
+		<button id="reloadScriptButton" onclick="saveCustomScript();">save settings</button>
+		<br><a href="alarm_admin.html">create schedule as administrator</a>
+		<button id="clearSpec" onclick="window.localStorage.setItem('spec', '');ChangeElementVisibility(ById('clearSpec'), false);RestartAlarms();">factory reset</button>
+	</div>
+</div>
+</div>
+</body>
+</html>
