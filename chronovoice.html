@@ -5,7 +5,7 @@
 <script type="text/javascript" src="voice.js"></script>
 <script type="text/javascript" src="timing.js"></script>
 <script type="text/javascript" src="parse.js"></script>
-<script type="text/javascript" src="parseschedule.js"></script>
+<script type="text/javascript" src="scheduling.js"></script>
 <script type="text/javascript">
 
 function PressStartButton() {
@@ -15,6 +15,7 @@ function PressStartButton() {
 }
 
 function ParseScheduleText() {
+	// TODO read the first token, so double quotes can be used to keep a comma in the message
 	var dayScheduleText = ById('today').value;
 	console.log(dayScheduleText);
 	var parsedSchedule = ParseDaySchedule(dayScheduleText);
@@ -27,7 +28,10 @@ function ParseScheduleText() {
 	console.log(blockAlarms);
 	var alarms = BlocksToOccasions(blocks, blockAlarms);
 	console.log(alarms);
-	DrawBlocks('timelineAlarms', alarms);
+	var now = newDate();
+	DrawBlocks('timelineAlarms', alarms, function (occaision) {
+		return (occaision.moment < now) ? "#ffffff88" : "#fff";
+	});
 	console.log(blocks);
 }
 
@@ -37,7 +41,7 @@ function RestartAlarms() {
 	console.log("restart alarms!");
 }
 
-function DrawBlocks(tablename, arrayElements) {
+function DrawBlocks(tablename, arrayElements, getColor) {
 	var tbodyRef = ById(tablename).getElementsByTagName('tbody')[0];
 	var new_tbody = document.createElement('tbody');
 	tbodyRef.parentNode.replaceChild(new_tbody, tbodyRef);
@@ -46,11 +50,15 @@ function DrawBlocks(tablename, arrayElements) {
 		var element = arrayElements[i];
 		var newRow = tbodyRef.insertRow();
 		var newCell = newRow.insertCell();
+		if (getColor) {
+			newCell.style.backgroundColor = getColor(element);
+		}
 		var newText = document.createTextNode(''+element);
 		newCell.appendChild(newText);
 	}
 }
 
+// TODO move to scheduling
 /**
 @param blocks {Block[]}
 @param blockAlarms {{label {string}, beginOrEnd {string}, time {int}, message {string}, randomVoice {bool}, voiceChoice {string[]}}[]}
@@ -75,36 +83,47 @@ function BlocksToOccasions(blocks, blockAlarms) {
 		if(!b) {
 			console.log("null block?");
 			console.log(blocks);
+			continue;
 		}
 		var duration = b.getDurationMinutes();
 		if (duration == 0) {
 			__AddOccasion(Occasion_minutesAfterBegin(b, b.name, 0, -1, null));
+			continue;
 		}
-		var replaceText = b.name;
-		//var it = this.spec.periodNameTranslation[b.name.trim()];
-		//if(it != undefined) { replaceText = it; }
-		var toReplace = ["$(name)"], toReplaceWith = [replaceText];
+		var toReplace = ["$(name)"], toReplaceWith = [b.name];
 		for(var n = 0; n < blockAlarms.length; n++) {
-			var al = blockAlarms[n];
-			if(b.alarmsUsed && (b.alarmsUsed.length == 0 || b.alarmsUsed.indexOf(al.label) >= 0)) {
-				var toAdd = null;
-				var min = parseInt(al.time);
-				if(duration > min) {
-					var text = String_Replace(al.message, toReplace, toReplaceWith);
-					if(al.beginOrEnd[0].toLowerCase() == "e") {
-						toAdd = Occasion_minutesBeforeEnd(b, text, min, n, al.voiceChoice, al.randomVoice);
-					} else {
-						toAdd = Occasion_minutesAfterBegin(b, text, min, n, al.voiceChoice, al.randomVoice);
-					}
-				}
-				if(toAdd && toAdd.text.length != 0) {
-					__AddOccasion(toAdd);
-				}
+			var toAdd = AlarmOccaisionForBlock(n, b, blockAlarms[n], toReplace, toReplaceWith);
+			if(toAdd && toAdd.text.length != 0) {
+				__AddOccasion(toAdd);
 			}
 		}
 	}
 	return occasions;
 }
+
+// TODO move to scheduling
+/**
+ * @param priority {Number} lower means it will be prioritized
+ * @param b {Block}
+ * @param alarmDetails {} what kind of alarm to set for the given block
+ * @param toReplace {string[]} what values to replace
+ * @param toReplaceWith {string[]} what values to replace will be replaced with
+ */
+function AlarmOccaisionForBlock(priority, b, alarmDetails, toReplace, toReplaceWith){
+	var offsetFromEvent = parseInt(alarmDetails.time);
+	if(b.getDurationMinutes() < offsetFromEvent) {
+		return null;
+	}
+	var text = String_Replace(alarmDetails.message, toReplace, toReplaceWith);
+	var toAdd = null;
+	if(alarmDetails.beginOrEnd[0].toLowerCase() == "e") {
+		toAdd = Occasion_minutesBeforeEnd(b, text, offsetFromEvent, priority, alarmDetails.voiceChoice, alarmDetails.randomVoice);
+	} else {
+		toAdd = Occasion_minutesAfterBegin(b, text, offsetFromEvent, priority, alarmDetails.voiceChoice, alarmDetails.randomVoice);
+	}
+	return toAdd;
+}
+
 
 </script><style>
 #info {
@@ -145,7 +164,7 @@ This evening	20:00	24:00
 <button onclick="ParseScheduleText()">calculate</button>
 <table id="timelineBlocks" border="1" style="background-color:#bbb"><tbody></tbody></table>
 <br>
-<table id="timelineAlarms" border="1" style="background-color:#fff"><tbody></tbody></table>
+<table id="timelineAlarms" border="1"><tbody></tbody></table>
 <br>
 			
 		<input type="checkbox" id="mute" name="mute" value="mute">

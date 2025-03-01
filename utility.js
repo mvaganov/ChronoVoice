@@ -94,13 +94,6 @@ function String_FromFile(filename, cb) {
 	}
 }
 
-// TODO deleteme
-// /**
-// @param datetime {Date}
-// @return {string} the given date converted to a string in "H:MM" format
-// */
-// function Date_HHMM(datetime) { return datetime.getHours()+":"+String_NumberLead0s(datetime.getMinutes(),2); }
-
 /**
 @param datetime {Date}
 @return {string} the given date converted to a string in "H:MM" format

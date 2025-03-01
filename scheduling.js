@@ -4,24 +4,24 @@ var DEFAULT_SPECIFICATIONS = {
 	spec:{
 		// order of the alarms here determines priority when speech marks an occaision
 		alarms:[{
-			label:"<10m", beginOrEnd:"end", time:10, 
-			message:"You should know that $(name) ends in 10 minutes",randomVoice: true,
+			label:"<10m", beginOrEnd:"end", time:10,  randomVoice: true,
+			message:"You should know that $(name) ends in 10 minutes",
 			voiceChoice: ["Samantha", "Daniel", "Alex", "Veena", "Karen", "Tessa"],
 		},{
-			label:"<5m", beginOrEnd:"end", time:5,
-			message:"Oh! $(name) ends in 5 minutes",randomVoice: true,
+			label:"<5m", beginOrEnd:"end", time:5, randomVoice: true,
+			message:"Oh! $(name) ends in 5 minutes",
 			voiceChoice: ["Daniel", "Alex", "Veena", "Karen", "Tessa", "Samantha"]
 		},{
-			label:"<1m", beginOrEnd:"end", time:1,
-			message:"Hey! $(name) is almost over!",randomVoice: true,
+			label:"<1m", beginOrEnd:"end", time:1, randomVoice: true,
+			message:"Hey! $(name) is almost over!",
 			voiceChoice: ["Alex", "Veena", "Karen", "Tessa", "Samantha", "Daniel"],
 		},{
-			label:"done", beginOrEnd:"end", time:0,
-			message:"$(name) is over.",randomVoice: true,
+			label:"done", beginOrEnd:"end", time:0, randomVoice: true,
+			message:"$(name) is over.",
 			voiceChoice: ["Veena", "Karen", "Tessa", "Samantha", "Daniel", "Alex"],
 		},{
-			label:"begin", beginOrEnd:"beg", time:0,
-			message:"$(name) begins now.",randomVoice: true,
+			label:"begin", beginOrEnd:"beg", time:0, randomVoice: true,
+			message:"$(name) begins now.",
 			voiceChoice: ["Karen", "Tessa", "Samantha", "Daniel", "Alex", "Veena"],
 		}], periodNameTranslation:{
 		A:"A. period",B:"B period", C:"C period", D:"D period", E:"E period",
