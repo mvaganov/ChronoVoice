@@ -1,0 +1,158 @@
+<html><title>ChronoVoice</title><head>
+<link rel="shortcut icon" href="chronovoice512.png" />
+<link rel="apple-touch-icon" href="chronovoice512.png" />
+<script type="text/javascript" src="utility.js"></script>
+<script type="text/javascript" src="voice.js"></script>
+<script type="text/javascript" src="timing.js"></script>
+<script type="text/javascript" src="parse.js"></script>
+<script type="text/javascript" src="parseschedule.js"></script>
+<script type="text/javascript">
+
+function PressStartButton() {
+	RestartAlarms();
+	ChangeElementVisibility(ById('startbutton'),false);
+	ChangeElementVisibility(ById('restOfUI'),true);
+}
+
+function ParseScheduleText() {
+	var dayScheduleText = ById('today').value;
+	console.log(dayScheduleText);
+	var parsedSchedule = ParseDaySchedule(dayScheduleText);
+	console.log(parsedSchedule);
+	var blocks = DayScheduleToBlocks(parsedSchedule);
+	console.log(blocks);
+	DrawBlocks('timelineBlocks', blocks);
+	console.log(DEFAULT_SPECIFICATIONS);
+	var blockAlarms = DEFAULT_SPECIFICATIONS.spec.alarms;
+	console.log(blockAlarms);
+	var alarms = BlocksToOccasions(blocks, blockAlarms);
+	console.log(alarms);
+	DrawBlocks('timelineAlarms', alarms);
+	console.log(blocks);
+}
+
+function RestartAlarms() {
+	//StopAlarms();
+	//StartAlarms(__Persist.daysource);
+	console.log("restart alarms!");
+}
+
+function DrawBlocks(tablename, arrayElements) {
+	var tbodyRef = ById(tablename).getElementsByTagName('tbody')[0];
+	var new_tbody = document.createElement('tbody');
+	tbodyRef.parentNode.replaceChild(new_tbody, tbodyRef);
+	tbodyRef = new_tbody;
+	for (var i = 0; i < arrayElements.length; i++) {
+		var element = arrayElements[i];
+		var newRow = tbodyRef.insertRow();
+		var newCell = newRow.insertCell();
+		var newText = document.createTextNode(''+element);
+		newCell.appendChild(newText);
+	}
+}
+
+/**
+@param blocks {Block[]}
+@param blockAlarms {{label {string}, beginOrEnd {string}, time {int}, message {string}, randomVoice {bool}, voiceChoice {string[]}}[]}
+@return {Occasion[]}
+*/
+function BlocksToOccasions(blocks, blockAlarms) {
+	var occasions = [];
+	var a = this;
+	var now = new Occasion();
+	// @type {number[]}
+	var minutesList = [];
+	function __AddOccasion(toAdd) {
+		var minutes = Occasion_minutesBetween(now, toAdd);
+		// insert the occasions in order, with soonest first
+		var index = 0;
+		for(;index < minutesList.length && minutesList[index] <= minutes; ++index);
+		minutesList.splice(index, 0, minutes);
+		occasions.splice(index, 0, toAdd);
+	}
+	for(var i = 0; i < blocks.length; ++i) {
+		var b = blocks[i];
+		if(!b) {
+			console.log("null block?");
+			console.log(blocks);
+		}
+		var duration = b.getDurationMinutes();
+		if (duration == 0) {
+			__AddOccasion(Occasion_minutesAfterBegin(b, b.name, 0, -1, null));
+		}
+		var replaceText = b.name;
+		//var it = this.spec.periodNameTranslation[b.name.trim()];
+		//if(it != undefined) { replaceText = it; }
+		var toReplace = ["$(name)"], toReplaceWith = [replaceText];
+		for(var n = 0; n < blockAlarms.length; n++) {
+			var al = blockAlarms[n];
+			if(b.alarmsUsed && (b.alarmsUsed.length == 0 || b.alarmsUsed.indexOf(al.label) >= 0)) {
+				var toAdd = null;
+				var min = parseInt(al.time);
+				if(duration > min) {
+					var text = String_Replace(al.message, toReplace, toReplaceWith);
+					if(al.beginOrEnd[0].toLowerCase() == "e") {
+						toAdd = Occasion_minutesBeforeEnd(b, text, min, n, al.voiceChoice, al.randomVoice);
+					} else {
+						toAdd = Occasion_minutesAfterBegin(b, text, min, n, al.voiceChoice, al.randomVoice);
+					}
+				}
+				if(toAdd && toAdd.text.length != 0) {
+					__AddOccasion(toAdd);
+				}
+			}
+		}
+	}
+	return occasions;
+}
+
+</script><style>
+#info {
+	position:fixed;
+	bottom:0px;
+	right:0px;
+	background-position:right bottom;
+	z-index: -10;
+}
+#startbutton {
+	width:100%;
+	font-size:100pt;
+}
+body {background-color:#888;}
+.unselectable {
+	-moz-user-select: none;
+	-webkit-user-select: none;
+	user-select: none;
+}
+</style>
+</head><body>
+	<div id="info">
+		<img src = "chronovoice512.png" class="unselectable">
+		<div style="position: absolute; bottom: 0; left: 0;">
+			TODO put URL here
+		</div>
+	</div>
+
+	<button id="startbutton" onclick="PressStartButton()">
+		Start!
+	</button>
+	<div id="restOfUI" style="display:none">
+<textarea name="today" id="today" cols="70" rows="10">
+This morning	0:00	12:00
+Today	12:00	20:00
+This evening	20:00	24:00
+</textarea><br>
+<button onclick="ParseScheduleText()">calculate</button>
+<table id="timelineBlocks" border="1" style="background-color:#bbb"><tbody></tbody></table>
+<br>
+<table id="timelineAlarms" border="1" style="background-color:#fff"><tbody></tbody></table>
+<br>
+			
+		<input type="checkbox" id="mute" name="mute" value="mute">
+		<span onclick="ToggleSiblingCheckbox(this)">mute all</span>
+		<br>
+		<button id="voicedo" onclick="Voice_Speak(ById('voicewords').value, ById('voiceselect').value);">test speech</button>
+		<select id="voiceselect"><!-- will be filled in by JavaScript --></select>
+		<input id="voicewords" value='testing. 1, 2, 3.'>
+	</div>
+</body></html>
