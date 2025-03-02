@@ -125,6 +125,7 @@ function Parse_Cursor(index=undefined, col=undefined, row=undefined) {
 	this.index = index;
 	this.row = row;
 	this.col = col;
+	this.breakingChars = Parse_TOKEN_BREAKING_CHARS;
 }
 Parse_Cursor.prototype.toString = function() { return "@"+this.index+", "+this.row+":"+this.col; }
 
@@ -176,8 +177,8 @@ function Parse_GetNextToken(text, cursor) {
 		cursor.index = i;
 	} else {
 		var i = cursor.index+1;
-		if(Parse_TOKEN_BREAKING_CHARS.indexOf(text[cursor.index]) < 0) {
-			while(Parse_TOKEN_BREAKING_CHARS.indexOf(text[i]) < 0
+		if(cursor.breakingChars.indexOf(text[cursor.index]) < 0) {
+			while(cursor.breakingChars.indexOf(text[i]) < 0
 			&& i < text.length) {
 				__Parse_AdvanceCoordinateBy(text[i], cursor);
 				i++;
@@ -223,8 +224,8 @@ function Parse_IntoObject(text, cursor, obj, errcb=undefined) {
 	while(cursor.index < text.length) {
 		var name = Parse_Value(Parse_GetNextToken(text, cursor), true);
 		if(name == /*{*/"}") { break; }
-		if(Parse_TOKEN_BREAKING_CHARS.indexOf(name) >= 0) {
-			return Parse_ERROR(errcb, cursor+" name of field ("+name+")cannot be one of these: "+Parse_TOKEN_BREAKING_CHARS);
+		if(cursor.breakingChars.indexOf(name) >= 0) {
+			return Parse_ERROR(errcb, cursor+" name of field ("+name+")cannot be one of these: "+cursor.breakingChars);
 		}
 		var value = Parse_GetNextToken(text, cursor);
 		if(value != ":") { return Parse_ERROR(errcb, cursor+" Expected colon "+cursor); }
@@ -266,7 +267,9 @@ function Parse_IntoList(text, cursor, list, errcb=undefined) {
 		list.push(value);
 		var comma = Parse_GetNextToken(text, cursor);
 		if(comma == /*[*/"]") { break; }
-		else if(comma != ",") { return Parse_ERROR(errcb, cursor+" Expected comma or ending-curly-brace"); }
+		else if(comma != "," && cursor.index < text.length) {
+			return Parse_ERROR(errcb, cursor+" Expected comma or ending-curly-brace, found '" + comma + "'");
+		}
 	}
 	return list;
 }

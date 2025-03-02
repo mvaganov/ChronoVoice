@@ -23,35 +23,54 @@ function Voice_Speak(text, voice, callback) {
 @return {SpeechSynthesisVoice} or null if there is no voice by the given name
 */
 function Voice_GetVoiceObject(voicename) {
-	if(voicename) {
-		voicename = voicename.toLowerCase();
-		voices = speechSynthesis.getVoices();
-		for(var i = 0; i < voices.length; ++i) {
-			if(voices[i].name.toLowerCase() == voicename.toLowerCase()) {
-				return voices[i];
-			}
+	if(!voicename) {
+		return null;
+	}
+	voicename = voicename.toLowerCase();
+	voices = speechSynthesis.getVoices();
+	// look for exact match of name first
+	for(var i = 0; i < voices.length; ++i) {
+		if(voices[i].name.toLowerCase() == voicename) {
+			return voices[i];
+		}
+	}
+	// look for contains match of name
+	for(var i = 0; i < voices.length; ++i) {
+		if(voices[i].name.toLowerCase().includes(voicename)) {
+			return voices[i];
+		}
+	}
+	// look for exact match of language
+	for(var i = 0; i < voices.length; ++i) {
+		if(voices[i].lang.toLowerCase() == voicename) {
+			return voices[i];
 		}
 	}
 	return null;
 }
 function PopulateVoiceDropdown() {
-	var dropdownName = "voiceselect";
-	// var outstring = "voices available: ";
-	var select = document.getElementById(dropdownName);
-	if (!select) {
-		console.error("need a dropdown named '" + dropdownName + "'");
-	}
-	for(var i = select.options.length - 1; i >= 0; i--) { select.options[i] = null; }
 	voices = speechSynthesis.getVoices();
+	var dropdownName = "voiceselect";
+	(function CooperativeLoop() {
+		var select = document.getElementById(dropdownName);
+		if (!select) {
+			setTimeout(CooperativeLoop, 5);
+		} else {
+			Voice_ApplyVoicesToDrowndown(select, voices);
+		}
+	})();
+}
+
+function Voice_ApplyVoicesToDrowndown(select, voices) {
+	for(var i = select.options.length - 1; i >= 0; i--) { select.options[i] = null; }
 	for(var i = 0; i < voices.length; ++i) {
 		var option = document.createElement("option");
-		option.text = voices[i].name+" ("+voices[i].lang+")";
+		option.text = voices[i].name + " (" + voices[i].lang + ")";
 		option.value = voices[i].name;
 		select.appendChild(option);
-		// outstring += ((i>0)?", ":"")+option.text;
 	}
-	// console.log(outstring);
 }
+
 (function Voice_Initialize() {
 	// prompt the speechSynthesis object to load some voices
 	if (typeof speechSynthesis !== 'undefined' && speechSynthesis.onvoiceschanged !== undefined) {

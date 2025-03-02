@@ -8,6 +8,21 @@
 <script type="text/javascript" src="scheduling.js"></script>
 <script type="text/javascript">
 
+function AllowTabsInTextArea(e) {
+	if (e.keyCode != 9 && e.which != 9) { return; }
+	e.preventDefault();
+	var s = this.selectionStart;
+	var textLeftOfSelection = this.value.substring(0,this.selectionStart);
+	var textRightOfSelection = this.value.substring(this.selectionEnd);
+	this.value = textLeftOfSelection + "	" + textRightOfSelection;
+	this.selectionEnd = s+1;
+}
+
+addEventListener('DOMContentLoaded', function() {
+	var today = ById("today");
+	today.onkeydown = AllowTabsInTextArea;
+});
+
 function PressStartButton() {
 	RestartAlarms();
 	ChangeElementVisibility(ById('startbutton'),false);
@@ -15,30 +30,25 @@ function PressStartButton() {
 }
 
 function ParseScheduleText() {
-	// TODO read the first token, so double quotes can be used to keep a comma in the message
 	var dayScheduleText = ById('today').value;
 	console.log(dayScheduleText);
 	var parsedSchedule = ParseDaySchedule(dayScheduleText);
 	console.log(parsedSchedule);
 	var blocks = DayScheduleToBlocks(parsedSchedule);
 	console.log(blocks);
-	DrawBlocks('timelineBlocks', blocks);
 	console.log(DEFAULT_SPECIFICATIONS);
 	var blockAlarms = DEFAULT_SPECIFICATIONS.spec.alarms;
 	console.log(blockAlarms);
-	var alarms = BlocksToOccasions(blocks, blockAlarms);
-	console.log(alarms);
+	var LoadedAlarms = BlocksToOccasions(blocks, blockAlarms);
+	console.log(LoadedAlarms);
 	var now = newDate();
-	DrawBlocks('timelineAlarms', alarms, function (occaision) {
+	// TODO add checkboxes to allow the alarms to be enabled/disabled
+	// TODO add a datetime editor field to move the occaision
+	// TODO add a text field to change the message
+	DrawBlocks('timelineAlarms', LoadedAlarms, function (occaision) {
 		return (occaision.moment < now) ? "#ffffff88" : "#fff";
 	});
-	console.log(blocks);
-}
-
-function RestartAlarms() {
-	//StopAlarms();
-	//StartAlarms(__Persist.daysource);
-	console.log("restart alarms!");
+	StartAlarms(LoadedAlarms);
 }
 
 function DrawBlocks(tablename, arrayElements, getColor) {
@@ -58,72 +68,75 @@ function DrawBlocks(tablename, arrayElements, getColor) {
 	}
 }
 
-// TODO move to scheduling
-/**
-@param blocks {Block[]}
-@param blockAlarms {{label {string}, beginOrEnd {string}, time {int}, message {string}, randomVoice {bool}, voiceChoice {string[]}}[]}
-@return {Occasion[]}
-*/
-function BlocksToOccasions(blocks, blockAlarms) {
-	var occasions = [];
-	var a = this;
-	var now = new Occasion();
-	// @type {number[]}
-	var minutesList = [];
-	function __AddOccasion(toAdd) {
-		var minutes = Occasion_minutesBetween(now, toAdd);
-		// insert the occasions in order, with soonest first
-		var index = 0;
-		for(;index < minutesList.length && minutesList[index] <= minutes; ++index);
-		minutesList.splice(index, 0, minutes);
-		occasions.splice(index, 0, toAdd);
+var countStarted = 0;
+function StartAlarms(alarms) {
+	var iterationDelay = 500;
+	var delayToStart = countStarted == 0 ? 0 : iterationDelay + 1;
+	setTimeout(StartIt, delayToStart);
+	function StartIt() {
+		KeepDoingThing(++countStarted,
+		() => {
+			UpdateNextOccaision(alarms);
+		}, iterationDelay,
+		(threadId) => {
+			return threadId == countStarted;
+		});
 	}
-	for(var i = 0; i < blocks.length; ++i) {
-		var b = blocks[i];
-		if(!b) {
-			console.log("null block?");
-			console.log(blocks);
-			continue;
-		}
-		var duration = b.getDurationMinutes();
-		if (duration == 0) {
-			__AddOccasion(Occasion_minutesAfterBegin(b, b.name, 0, -1, null));
-			continue;
-		}
-		var toReplace = ["$(name)"], toReplaceWith = [b.name];
-		for(var n = 0; n < blockAlarms.length; n++) {
-			var toAdd = AlarmOccaisionForBlock(n, b, blockAlarms[n], toReplace, toReplaceWith);
-			if(toAdd && toAdd.text.length != 0) {
-				__AddOccasion(toAdd);
-			}
-		}
-	}
-	return occasions;
 }
 
-// TODO move to scheduling
-/**
- * @param priority {Number} lower means it will be prioritized
- * @param b {Block}
- * @param alarmDetails {} what kind of alarm to set for the given block
- * @param toReplace {string[]} what values to replace
- * @param toReplaceWith {string[]} what values to replace will be replaced with
- */
-function AlarmOccaisionForBlock(priority, b, alarmDetails, toReplace, toReplaceWith){
-	var offsetFromEvent = parseInt(alarmDetails.time);
-	if(b.getDurationMinutes() < offsetFromEvent) {
-		return null;
+function UpdateNextOccaision(sortedList) {
+	if (!sortedList || sortedList.length == 0) {
+		UpdateOutput("finished");
+		return;
 	}
-	var text = String_Replace(alarmDetails.message, toReplace, toReplaceWith);
-	var toAdd = null;
-	if(alarmDetails.beginOrEnd[0].toLowerCase() == "e") {
-		toAdd = Occasion_minutesBeforeEnd(b, text, offsetFromEvent, priority, alarmDetails.voiceChoice, alarmDetails.randomVoice);
-	} else {
-		toAdd = Occasion_minutesAfterBegin(b, text, offsetFromEvent, priority, alarmDetails.voiceChoice, alarmDetails.randomVoice);
+	var next = sortedList[0];
+	var now = Seconds();
+	var soon = Seconds(next.moment);
+	while (next && soon < now) {
+		if(next.isNow() && !next.isTriggered()) {
+			next.trigger();
+		}
+		sortedList.splice(0,1);
+		next = null;
+		if (sortedList.length > 0) {
+			next = sortedList[0];
+			soon = Seconds(next.moment);
+		}
 	}
-	return toAdd;
+	if (next) {
+		UpdateOutput(next.text, soon);
+	}
 }
 
+function KeepDoingThing(threadId, thingToDo, iterationDelay, loopConditionForThread) {
+	(function ContinueLoop() {
+		thingToDo();
+		if (!loopConditionForThread || loopConditionForThread(threadId)) {
+			setTimeout(ContinueLoop, iterationDelay);
+		}
+	})();
+}
+
+/** puts text into the message area at the top. Also updates visible timer */
+function UpdateOutput(text, when) {
+	var out = ById("out");
+	if(!out) {
+		return;
+	}
+	cout = "The next message will be:<br><span id='voice'>"+text+"</span>";
+	var now = Seconds();
+	if (!when) { when = now; }
+	var waitingLeft = parseInt(when - now);
+	if(waitingLeft > 0) {
+		cout += "<br>in ";
+		cout += TimePrint(waitingLeft);
+	} else { cout += "<br>"; }
+	out.innerHTML = cout;
+}
+
+function SaveSchedule() { setCookie("schedule", ById('today').value); }
+
+function LoadSchedule() { ById('today').value = getCookie("schedule"); }
 
 </script><style>
 #info {
@@ -151,22 +164,25 @@ body {background-color:#888;}
 			TODO put URL here
 		</div>
 	</div>
-
+<!--
 	<button id="startbutton" onclick="PressStartButton()">
 		Start!
 	</button>
 	<div id="restOfUI" style="display:none">
+-->
+	<p id="out"><br></p>
+	<div id="restOfUI">
 <textarea name="today" id="today" cols="70" rows="10">
-This morning	0:00	12:00
-Today	12:00	20:00
-This evening	20:00	24:00
+"This morning", 0:00, 12:00
+Today, 12:00, 20:00
+"This evening", 20:00, 24:00
 </textarea><br>
-<button onclick="ParseScheduleText()">calculate</button>
-<table id="timelineBlocks" border="1" style="background-color:#bbb"><tbody></tbody></table>
-<br>
-<table id="timelineAlarms" border="1"><tbody></tbody></table>
-<br>
-			
+		<button onclick="ParseScheduleText()">calculate</button>
+		<button onclick="SaveSchedule()">save schedule</button>
+		<button onclick="LoadSchedule()">load previous schedule</button>
+		<br>
+		<table id="timelineAlarms" border="1"><tbody></tbody></table>
+		<br>			
 		<input type="checkbox" id="mute" name="mute" value="mute">
 		<span onclick="ToggleSiblingCheckbox(this)">mute all</span>
 		<br>
