@@ -1,0 +1,40 @@
+<html><title>ChronoVoice</title><head>
+<script type="text/javascript" src="utility.js"></script>
+<script type="text/javascript" src="gyro.js"></script>
+<script type="text/javascript">
+// TODO figure out how to get actual data from the phone
+// 	window.addEventListener('devicemotion', function(event) {
+// 		console.log(event);
+// 	let accelerationX = event.accelerationIncludingGravity.x;
+// 	let accelerationY = event.accelerationIncludingGravity.y;
+// 	let accelerationZ = event.accelerationIncludingGravity.z;
+// 	let rotationRateAlpha = event.rotationRate.alpha;
+// 	let rotationRateBeta = event.rotationRate.beta;
+// 	let rotationRateGamma = event.rotationRate.gamma;
+// 	console.log('Acceleration:', accelerationX, accelerationY, accelerationZ);
+// 	console.log('Rotation Rate:', rotationRateAlpha, rotationRateBeta, rotationRateGamma);
+// 	ById("x").innerHTML = accelerationX;
+// 	ById("y").innerHTML = accelerationY;
+// 	ById("z").innerHTML = accelerationZ;
+// });
+gyro.startTracking((measurements) => {
+	showme(measurements);
+});
+
+function showme(thing) {
+	var element = ById("test");
+	if (element) {
+		element.innerHTML = JSON.stringify(thing);
+	}
+}
+	// (function CooperativeLoop() {
+	// 	setTimeout(CooperativeLoop, 500);
+	// })();
+</script>
+</head>
+<body>
+	test:<p id="test"></p>
+	x:<p id="x"></p>
+	y:<p id="y"></p>
+	z:<p id="z"></p>
+</body></html>

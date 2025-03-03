@@ -181,11 +181,17 @@ Today, 12:00, 20:00
 		<button onclick="SaveSchedule()">save schedule</button>
 		<button onclick="LoadSchedule()">load previous schedule</button>
 		<br>
+		<br>
+	</div>
+	<span>
+		<input type="checkbox" name="editsettings" value="edit" onclick="ChangeElementVisibility(ById('customsettings'),this.checked);">
+		<span onclick="ToggleSiblingCheckbox(this)">advanced script editing</span><br>
+	</span>
+	<div id="customsettings" style="display:none;" class="settings">
 		<table id="timelineAlarms" border="1"><tbody></tbody></table>
 		<br>			
 		<input type="checkbox" id="mute" name="mute" value="mute">
 		<span onclick="ToggleSiblingCheckbox(this)">mute all</span>
-		<br>
 		<button id="voicedo" onclick="Voice_Speak(ById('voicewords').value, ById('voiceselect').value);">test speech</button>
 		<select id="voiceselect"><!-- will be filled in by JavaScript --></select>
 		<input id="voicewords" value='testing. 1, 2, 3.'>
