@@ -36,6 +36,8 @@ function ParseScheduleText() {
 	console.log(parsedSchedule);
 	var blocks = DayScheduleToBlocks(parsedSchedule);
 	console.log(blocks);
+	var alarmSpecifiations = LoadAlarmSpecifications();
+	// 
 	console.log(DEFAULT_SPECIFICATIONS);
 	var blockAlarms = DEFAULT_SPECIFICATIONS.spec.alarms;
 	console.log(blockAlarms);
@@ -49,6 +51,14 @@ function ParseScheduleText() {
 		return (occaision.moment < now) ? "#ffffff88" : "#fff";
 	});
 	StartAlarms(LoadedAlarms);
+}
+
+function LoadAlarmSpecifications(){
+	var textArea = ById('alarmsettings')
+	// TODO finish me...
+	//  if it's empty, fill it with JSON.stringify(DEFAULT_SPECIFICATIONS)
+	//  parse the text
+	//  if there are no errors, return .spec.alarm
 }
 
 function DrawBlocks(tablename, arrayElements, getColor) {
@@ -195,5 +205,6 @@ Today, 12:00, 20:00
 		<button id="voicedo" onclick="Voice_Speak(ById('voicewords').value, ById('voiceselect').value);">test speech</button>
 		<select id="voiceselect"><!-- will be filled in by JavaScript --></select>
 		<input id="voicewords" value='testing. 1, 2, 3.'>
+		<textarea name="settings" id="alarmsettings" cols="80" rows="24"></textarea>
 	</div>
 </body></html>
