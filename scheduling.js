@@ -35,7 +35,7 @@ var Alarm_STANDARD_FILE = JSON.stringify(DEFAULT_SPECIFICATIONS, null, 2);
 
 /** @class components of a school schedule */
 function Block(name = "", startTime="12:00", endTime=null, baseDate=null) {
-	if(endTime == null) { endTime = startTime; }
+	if (endTime == null) { endTime = startTime; }
 	this.name = "";
 	this.alarmsUsed = [];
 	this.Set(name, startTime, endTime, baseDate);
@@ -52,35 +52,35 @@ Block.prototype.toString = function() {
 @param endTime {string}
 */
 Block.prototype.Set = function(name, startTime, endTime, baseDate=null) {
-	if(name) { this.name = name.trim(); }
-	if(!baseDate){baseDate=newDate();}
+	if (name) { this.name = name.trim(); }
+	if (!baseDate){baseDate=newDate();}
 	t = new Date(baseDate);
 	function breakTimeText(txt) {
 		var out = null;
-		if(txt.indexOf(":") >= 0) {
+		if (txt.indexOf(":") >= 0) {
 			out = String_SplitClean(txt, Parse_COLON);
-		} else if(txt.length >= 3) {
+		} else if (txt.length >= 3) {
 			var l = txt.length;
 			out = [txt.substring(0,l-2),txt.substring(l-2, l)];
 		} else { out = [txt,"00"]; }
 		return out;
 	}
-	if(startTime instanceof Date) {
+	if (startTime instanceof Date) {
 		this.start = startTime;
 	} else {
 		var start = breakTimeText(startTime);
 		var startCal = new Date(baseDate);
-		if(startTime) {
+		if (startTime) {
 			startCal = new Date(t.getFullYear(), t.getMonth(), t.getDate(), parseInt(start[0]), parseInt(start[1]), 0, 0);
 		}
 		this.start = startCal;
 	}
-	if(endTime instanceof Date) {
+	if (endTime instanceof Date) {
 		this.end = endTime;
 	} else {
 		var end   = breakTimeText(endTime);
 		var endCal = new Date(baseDate);
-		if(endTime) {
+		if (endTime) {
 			endCal = new Date(t.getFullYear(), t.getMonth(), t.getDate(), parseInt(end[0]), parseInt(end[1]), 0, 0);
 		}
 		this.end = endCal;
@@ -98,7 +98,7 @@ function Occasion (text = "", when = null, priority = 0, voicesList = null, rand
 	this.triggered = false;
 	this.enabled = true;
 	this.priority = priority;
-	if(!when) this.moment = newDate();
+	if (!when) this.moment = newDate();
 	else this.moment = when;
 	function shuffleArray(array) {
 		for (var i = array.length - 1; i > 0; i--) {
@@ -115,12 +115,12 @@ function Occasion (text = "", when = null, priority = 0, voicesList = null, rand
 		for(var i = 0; i < voicesList.length; ++i) {
 			voicesList[i] = voicesList[i].trim();
 			var actualVoice = Voice_GetVoiceObject(voicesList[i]);
-			if(actualVoice != null) { return actualVoice; }
+			if (actualVoice != null) { return actualVoice; }
 		}
 		return null;
 	}
-	if(voicesList) {
-		if(randomVoice) { voicesList = shuffleArray(voicesList.slice(0)); }
+	if (voicesList) {
+		if (randomVoice) { voicesList = shuffleArray(voicesList.slice(0)); }
 		this.voice = GetTheVoiceThatWorksFrom(voicesList);
 	}
 }
@@ -180,15 +180,15 @@ function ConvertUTCToDate(tstamp, useLocalTime = false) {
 	cursor = tstamp.indexOf("-", index);
 	var MM = tstamp.substring(index,cursor); index = cursor+1;
 	cursor = tstamp.indexOf("T", index);
-	if(cursor < 0) { cursor = tstamp.length; }
+	if (cursor < 0) { cursor = tstamp.length; }
 	var DD = Number(tstamp.substring(index,cursor)); index = cursor+1;
 	var hh = 0, mm = 0, ss = 0;
-	if(useLocalTime) {
+	if (useLocalTime) {
 		d = new Date(YYYY, MM-1, DD);
 	} else {
 		d = new Date(Date.UTC(YYYY, MM-1, DD));
 	}
-	if(index < tstamp.length){
+	if (index < tstamp.length){
 		hh = Number(tstamp.substring(index,index+2)); index += 2;
 		mm = Number(tstamp.substring(index,index+2)); index += 2;
 		ss = Number(tstamp.substring(index,index+2)); index += 2;
@@ -239,7 +239,6 @@ function BlocksToOccasions(blocks, blockAlarms) {
 	var minutesList = [];
 	function __AddOccasion(toAdd) {
 		var minutes = Occasion_minutesBetween(now, toAdd);
-		// insert the occasions in order, with soonest first
 		var index = 0;
 		for(;index < minutesList.length && minutesList[index] <= minutes; ++index);
 		minutesList.splice(index, 0, minutes);
@@ -247,7 +246,7 @@ function BlocksToOccasions(blocks, blockAlarms) {
 	}
 	for(var i = 0; i < blocks.length; ++i) {
 		var b = blocks[i];
-		if(!b) {
+		if (!b) {
 			console.log("null block?");
 			console.log(blocks);
 			continue;
@@ -260,7 +259,7 @@ function BlocksToOccasions(blocks, blockAlarms) {
 		var toReplace = ["$(name)"], toReplaceWith = [b.name];
 		for(var n = 0; n < blockAlarms.length; n++) {
 			var toAdd = AlarmOccaisionForBlock(n, b, blockAlarms[n], toReplace, toReplaceWith);
-			if(toAdd && toAdd.text.length != 0) {
+			if (toAdd && toAdd.text.length != 0) {
 				__AddOccasion(toAdd);
 			}
 		}
@@ -277,12 +276,12 @@ function BlocksToOccasions(blocks, blockAlarms) {
  */
 function AlarmOccaisionForBlock(priority, b, alarmDetails, toReplace, toReplaceWith){
 	var offsetFromEvent = parseInt(alarmDetails.time);
-	if(b.getDurationMinutes() < offsetFromEvent) {
+	if (b.getDurationMinutes() < offsetFromEvent) {
 		return null;
 	}
 	var text = String_Replace(alarmDetails.message, toReplace, toReplaceWith);
 	var toAdd = null;
-	if(alarmDetails.beginOrEnd[0].toLowerCase() == "e") {
+	if (alarmDetails.beginOrEnd[0].toLowerCase() == "e") {
 		toAdd = Occasion_minutesBeforeEnd(b, text, offsetFromEvent, priority, alarmDetails.voiceChoice, alarmDetails.randomVoice);
 	} else {
 		toAdd = Occasion_minutesAfterBegin(b, text, offsetFromEvent, priority, alarmDetails.voiceChoice, alarmDetails.randomVoice);
