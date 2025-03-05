@@ -1,6 +1,5 @@
 // TODO breakup into "block.js", "occaision.js", "alarmset.js"
 var DEFAULT_SPECIFICATIONS = {
-	homeURL: "", // TODO remove this?
 	rootFile:"dates.txt",
 	spec:{
 		// order of the alarms here determines priority when speech marks an occaision
